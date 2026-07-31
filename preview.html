@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>音乐教学演示台 · 3D 卡片堆预览</title>
+<style>
+  :root {
+    --ease: cubic-bezier(.22, .61, .36, 1);
+    --sans: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    font-family: var(--sans);
+    background: radial-gradient(130% 120% at 50% -10%, #fcfbf8 0%, #eef1f3 55%, #e4e8ec 100%);
+    overflow: hidden; position: relative;
+    -webkit-font-smoothing: antialiased;
+  }
+  .mark {
+    position: fixed; top: 24px; left: 28px; z-index: 60;
+    font-size: 18px; color: rgba(40,46,54,.32); letter-spacing: 1px; user-select: none;
+  }
+
+  /* ===== 3D 卡片堆（斜向里叠成一摞） ===== */
+  .scene {
+    position: relative; z-index: 1; height: 100vh;
+    display: flex; align-items: center; justify-content: center;
+    perspective: 1800px;
+  }
+  .stack {
+    position: relative;
+    width: 800px; height: 420px;
+    transform-style: preserve-3d;
+  }
+  .stack-card {
+    position: absolute; top: 0; left: 0;
+    width: 380px; aspect-ratio: 297 / 210;            /* 放大，A4 横向，与展开页同比例 */
+    background: #fdfcf9;
+    border-radius: 0;
+    opacity: var(--op, 1);                       /* 用变量驱动，便于悬停时整体淡化 */
+    cursor: pointer; user-select: none; will-change: transform;
+    transform-origin: center;
+    transform: translate(calc(var(--x, 0) * 1px), calc(var(--y, 0) * 1px));  /* 长方形，不旋转、不斜切、只错开 */
+    box-shadow: 0 10px 28px rgba(20,22,30,.16);
+    transition: transform .5s cubic-bezier(.22,.61,.36,1),
+                opacity .4s, box-shadow .4s, filter .5s;
+    will-change: transform;
+    display: grid; place-items: center;
+  }
+  .stack-card:hover {
+    transform: translate(calc(var(--x, 0) * 1px), calc(var(--y, 0) * 1px)) translateY(-20px) scale(1.2);
+    z-index: 200;                                            /* 悬停时置于最上层 */
+    opacity: 1;                                              /* 被指的卡片始终完整显示 */
+    box-shadow: 0 30px 64px rgba(20,22,30,.34);
+    transition: transform .25s cubic-bezier(.2,.7,.3,1), box-shadow .25s;
+  }
+  /* 悬停时只淡化“前方遮挡”的卡片：倒序 DOM 下，位于被指卡片之前的兄弟（z 更高）
+     恰好是它后面的 ~ 兄弟被悬停的卡片。仅这些淡化，后排卡片保持完整。 */
+  .stack-card:has(~ .stack-card:hover) {
+    /* 被指卡片“前方遮挡”的卡片（此时在左侧）：向左下大幅让位并淡化，露出被指的卡片 */
+    transform: translate(calc((var(--x) - 160) * 1px), calc((var(--y) + 40) * 1px));
+    opacity: .8;
+    filter: blur(.6px);
+    transition: transform .4s cubic-bezier(.22,.61,.36,1), opacity .25s, filter .25s;
+  }
+  .stack-card span {
+    font-size: 76px; font-weight: 300; line-height: 1;
+    color: var(--c, #5e7280);
+  }
+  .stack-card .thumb {
+    width: 100%; height: 100%;
+    display: grid; place-items: center;
+    transition: box-shadow .25s;
+  }
+  .stack-card.dim { opacity: .12; filter: blur(2px); pointer-events: none; }
+
+  /* ===== 全屏书页 ===== */
+  .reader {
+    position: fixed; inset: 0; z-index: 100;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(20,23,28,.5); backdrop-filter: blur(14px);
+    opacity: 0; visibility: hidden; pointer-events: none;
+    transition: opacity .45s var(--ease), visibility 0s linear .45s;
+  }
+  .reader.show { opacity: 1; visibility: visible; pointer-events: auto; transition: opacity .45s var(--ease); }
+  .reader-page {
+    position: relative;
+    width: 100%; height: 100%;               /* 全屏展开，铺满视口 */
+    background: #fdfcf9; border-radius: 0;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 24px;
+    padding: 64px; user-select: none;
+    transform-origin: top left;              /* FLIP：从卡片位置长大 */
+    will-change: transform;
+  }
+  .bigSym {
+    font-size: clamp(120px, 22vw, 210px); line-height: 1;
+    color: var(--c, #5e7280);
+    filter: drop-shadow(0 14px 26px rgba(20,22,30,.16));
+    animation: pop .5s var(--ease);
+  }
+  .bigSym.swap { animation: swap .45s var(--ease); }
+  @keyframes pop { from { transform: scale(.6); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+  @keyframes swap { from { transform: scale(.84); opacity: .2; } to { transform: scale(1); opacity: 1; } }
+  .rdots { position: absolute; bottom: 22px; left: 0; right: 0; display: flex; justify-content: center; gap: 9px; }
+  .rdots i { width: 6px; height: 6px; border-radius: 50%; background: rgba(20,22,30,.16); transition: all .3s; }
+  .rdots i.on { background: rgba(94,114,128,.55); transform: scale(1.15); }
+  /* 右下角黑点退出按钮 */
+  .exit {
+    position: absolute; right: 30px; bottom: 30px;
+    width: 18px; height: 18px; border-radius: 50%;
+    background: #1a1d22; border: none; padding: 0; cursor: pointer;
+    opacity: .5; transition: opacity .2s var(--ease), transform .2s var(--ease);
+  }
+  .exit:hover { opacity: 1; transform: scale(1.18); }
+</style>
+</head>
+<body>
+  <div class="mark">♪</div>
+  <div class="scene">
+    <div class="stack" id="stack"></div>
+  </div>
+
+  <div class="reader" id="reader" onclick="if(event.target===this)closeReader()">
+    <div class="reader-page" id="rPage" onclick="step(1)">
+      <div class="bigSym" id="rSym">♪</div>
+      <div class="rdots" id="rDots"></div>
+      <button class="exit" onclick="event.stopPropagation(); closeReader()" aria-label="退出"></button>
+    </div>
+  </div>
+
+<script>
+  // 低饱和莫兰迪色系；演示 12 个，真实数据来自 Supabase
+  const UNITS = [
+    { c: "#5e7280", ic: "♪", slides: ["♪","♫","♩"] },
+    { c: "#a87c57", ic: "♫", slides: ["♫","♪","♬"] },
+    { c: "#7d9069", ic: "♩", slides: ["♩","♪"] },
+    { c: "#8d6f82", ic: "♬", slides: ["♬","♫","♪"] },
+    { c: "#a78f63", ic: "♭", slides: ["♭","♪","♫"] },
+    { c: "#5e7280", ic: "♪", slides: ["♪","♩"] },
+    { c: "#a87c57", ic: "♫", slides: ["♫","♬","♪"] },
+    { c: "#7d9069", ic: "♩", slides: ["♩","♫"] },
+    { c: "#8d6f82", ic: "♬", slides: ["♬","♪"] },
+    { c: "#a78f63", ic: "♭", slides: ["♭","♫","♪"] },
+    { c: "#5e7280", ic: "♪", slides: ["♪","♫"] },
+    { c: "#a87c57", ic: "♫", slides: ["♫","♩","♬"] }
+  ];
+
+  const SOLID = 10;                           // 最多 10 张实心，超出部分逐渐淡化消失
+  const stack  = document.getElementById('stack');
+  const reader = document.getElementById('reader');
+  const rPage  = document.getElementById('rPage');
+  let curUnit = -1, curSlide = 0;
+  let curCard = null;
+
+  function buildStack() {
+    // 倒序渲染：后排在前、最前排在最后，便于用 ~ 选中“前方遮挡卡片”
+    stack.innerHTML = UNITS.map((u, i) => `
+      <div class="stack-card" data-idx="${i}" style="--c:${u.c}">
+        <div class="thumb"><span>${u.ic}</span></div>
+      </div>
+    `).reverse().join('');
+    stack.querySelectorAll('.stack-card').forEach(c => {
+      c.addEventListener('click', () => openReader(+c.dataset.idx));
+    });
+    updateStackPositions();
+  }
+
+  // 全部卡片按数组顺序叠成一摞；最前一张在右侧，越往后越向左、向上错开，
+  // 这样后排卡片会露出左侧可悬停/点击的边缘，解决“后面的卡片选不中”的问题
+  function updateStackPositions() {
+    stack.querySelectorAll('.stack-card').forEach((c, i) => {
+      const s = i;                                  // 按数组顺序，不循环偏移
+      c.style.setProperty('--x', 23 + s * 34);       // 最前在左下(23)，向后向右上错开
+      c.style.setProperty('--y', 131 - s * 10);      // 整体居中于视口（从左下到右上的方向）
+      c.style.zIndex = 100 - s * 2;                  // 越靠前越在上
+      c.style.setProperty('--op', s < SOLID
+        ? '1'
+        : String(Math.max(0, 0.55 - (s - SOLID + 1) * 0.22)));  // 超出部分逐渐淡化
+      c.style.pointerEvents = 'auto';                // 全部可点，保证都能打开
+    });
+  }
+
+  function openReader(i) {
+    curUnit = i; curSlide = 0;
+    const u = UNITS[i];
+    const c = stack.querySelector(`.stack-card[data-idx="${i}"]`);
+    curCard = c;
+    rPage.style.setProperty('--c', u.c);
+    stack.querySelectorAll('.stack-card').forEach(o => {
+      if (+o.dataset.idx !== i && +o.style.zIndex > 0) o.classList.add('dim');
+    });
+    renderSlide();
+    // FLIP：让全屏页从被点卡片的位置/大小“长大”
+    const first = c.getBoundingClientRect();
+    reader.classList.add('show');
+    rPage.style.transition = 'none';
+    rPage.style.transform = '';
+    void rPage.offsetWidth;
+    const last = rPage.getBoundingClientRect();
+    const dx = first.left - last.left;
+    const dy = first.top - last.top;
+    const sx = first.width / last.width;
+    const sy = first.height / last.height;
+    rPage.style.transform = `translate(${dx}px, ${dy}px) scale(${sx}, ${sy})`;
+    void rPage.offsetWidth;
+    requestAnimationFrame(() => {
+      rPage.style.transition = 'transform .55s cubic-bezier(.22,.61,.36,1)';
+      rPage.style.transform = 'translate(0,0) scale(1)';
+    });
+  }
+
+  function closeReader() {
+    if (!curCard) { reader.classList.remove('show'); curUnit = -1; return; }
+    const first = curCard.getBoundingClientRect();
+    const last  = rPage.getBoundingClientRect();
+    const dx = first.left - last.left;
+    const dy = first.top - last.top;
+    const sx = first.width / last.width;
+    const sy = first.height / last.height;
+    rPage.style.transition = 'transform .45s cubic-bezier(.22,.61,.36,1)';
+    rPage.style.transform = `translate(${dx}px, ${dy}px) scale(${sx}, ${sy})`;
+    setTimeout(() => {
+      reader.classList.remove('show');                       // 页面保持缩小态随遮罩淡出，不闪白
+      stack.querySelectorAll('.stack-card').forEach(o => o.classList.remove('dim'));
+      curUnit = -1; curCard = null;
+      setTimeout(() => { rPage.style.transition = 'none'; rPage.style.transform = ''; }, 500);
+    }, 460);
+  }
+
+  function renderSlide() {
+    const u = UNITS[curUnit];
+    const sym = document.getElementById('rSym');
+    sym.textContent = u.slides[curSlide];
+    sym.classList.remove('swap'); void sym.offsetWidth; sym.classList.add('swap');
+    document.getElementById('rDots').innerHTML =
+      u.slides.map((_, k) => `<i class="${k === curSlide ? 'on' : ''}"></i>`).join('');
+  }
+
+  function step(d) {
+    if (curUnit === -1) return;
+    const n = UNITS[curUnit].slides.length;
+    curSlide = (curSlide + d + n) % n;
+    renderSlide();
+  }
+
+  document.addEventListener('keydown', e => {
+    if (curUnit !== -1) {
+      if (e.key === 'Escape') closeReader();
+      if (e.key === 'ArrowRight') step(1);
+      if (e.key === 'ArrowLeft')  step(-1);
+    }
+  });
+
+  buildStack();
+</script>
+</body>
+</html>
