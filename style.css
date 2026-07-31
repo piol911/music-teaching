@@ -1457,6 +1457,22 @@ html, body {
 
 .unit-card { position: relative; }
 
+.unit-card-order {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    display: flex;
+    gap: 4px;
+    z-index: 2;
+}
+.unit-card-order .order-btn {
+    width: 26px;
+    height: 26px;
+    font-size: 0.9rem;
+    background: var(--bg-surface);
+    box-shadow: 0 1px 4px rgba(0,0,0,0.18);
+}
+
 .admin-item-cover { background: rgba(74,111,165,0.06); }
 .admin-item { position: relative; }
 .cover-badge {
@@ -1551,6 +1567,84 @@ html, body {
 }
 
 .modal-overlay.show .modal-box { transform: scale(1); }
+
+/* ====== 文件预览弹窗 ====== */
+.file-preview-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    background: rgba(0,0,0,0.82);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+}
+.file-preview-overlay.show { display: flex; }
+.file-preview-box {
+    background: var(--bg-surface);
+    border-radius: 12px;
+    max-width: 92vw;
+    max-height: 90vh;
+    min-width: 320px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+}
+.file-preview-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--border);
+}
+.file-preview-header h2 {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text);
+    margin: 0;
+    word-break: break-all;
+}
+.file-preview-close {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    width: 32px;
+    height: 32px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+.file-preview-close:hover { background: var(--bg-hover); color: var(--text); }
+.file-preview-body {
+    padding: 16px;
+    overflow: auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 120px;
+}
+.file-preview-media {
+    max-width: 86vw;
+    max-height: 76vh;
+    border-radius: 6px;
+}
+.file-preview-body iframe.file-preview-media {
+    width: 80vw;
+    height: 76vh;
+    border: none;
+}
+.file-preview-fallback { text-align: center; padding: 30px 20px; }
+.file-preview-fallback-icon { font-size: 3rem; margin-bottom: 12px; }
+.file-preview-fallback-name {
+    font-size: 0.95rem;
+    color: var(--text-muted);
+    margin-bottom: 18px;
+    word-break: break-all;
+}
 
 .modal-header {
     display: flex;
@@ -2357,6 +2451,22 @@ html, body {
 .file-item-delete:hover {
     background: rgba(224,83,62,0.15);
     border-color: rgba(224,83,62,0.4);
+}
+
+.file-item-preview {
+    padding: 6px 14px;
+    font-size: 0.82rem;
+    border: 1px solid rgba(74,111,165,0.3);
+    border-radius: 6px;
+    background: rgba(74,111,165,0.06);
+    color: var(--primary);
+    cursor: pointer;
+    transition: all 0.2s var(--ease);
+    flex-shrink: 0;
+}
+.file-item-preview:hover {
+    background: rgba(74,111,165,0.16);
+    border-color: var(--primary);
 }
 
 .file-empty {

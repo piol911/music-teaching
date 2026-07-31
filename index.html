@@ -201,8 +201,19 @@
     </div>
 </div>
 
+<!-- ============ 文件预览 ============ -->
+<div id="file-preview-overlay" class="file-preview-overlay" onclick="if(event.target===this)closeFilePreview()">
+    <div class="file-preview-box">
+        <div class="file-preview-header">
+            <h2 id="file-preview-title">文件预览</h2>
+            <button class="file-preview-close" onclick="closeFilePreview()"><svg viewBox="0 0 24 24" width="22" height="22"><path d="M6 6 L18 18 M18 6 L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
+        </div>
+        <div class="file-preview-body" id="file-preview-media"></div>
+    </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="data.js"></script>
-<script src="app.js?v=16"></script>
+<script src="app.js?v=17"></script>
 </body>
 </html>

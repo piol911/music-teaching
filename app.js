@@ -494,6 +494,10 @@ function renderDashboard() {
 
         return `
             <div class="unit-card" data-index="${index}" style="animation-delay: ${index * 0.08}s" onclick="startPresentation(${index})">
+                <div class="unit-card-order">
+                    <button class="order-btn" title="上移" ${index === 0 ? 'disabled' : ''} onclick="event.stopPropagation(); moveUnit('${unit.id}', -1)">↑</button>
+                    <button class="order-btn" title="下移" ${index === appData.units.length - 1 ? 'disabled' : ''} onclick="event.stopPropagation(); moveUnit('${unit.id}', 1)">↓</button>
+                </div>
                 <div class="unit-card-cover">
                     <span class="unit-card-icon">${icon}</span>
                 </div>
@@ -527,6 +531,31 @@ async function saveSlidesOrder(unit) {
         }
     } catch (e) {
         showToast('页面顺序保存失败：' + (e.message || '网络错误'), 'error');
+    }
+}
+
+// ====== 单元整体排序（上下移动） ======
+function moveUnit(unitId, dir) {
+    const idx = appData.units.findIndex(u => u.id === unitId);
+    if (idx < 0) return;
+    const target = idx + dir;
+    if (target < 0 || target >= appData.units.length) return;
+    const tmp = appData.units[idx];
+    appData.units[idx] = appData.units[target];
+    appData.units[target] = tmp;
+    renderAdminUnits();
+    renderDashboard();
+    saveUnitsOrder();
+}
+
+async function saveUnitsOrder() {
+    try {
+        for (let i = 0; i < appData.units.length; i++) {
+            const u = appData.units[i];
+            await sb.from('units').update({ sort_order: i }).eq('id', u.id);
+        }
+    } catch (e) {
+        showToast('单元顺序保存失败：' + (e.message || '网络错误'), 'error');
     }
 }
 
@@ -1138,6 +1167,8 @@ function renderAdminUnits() {
                 <div class="admin-unit-header">
                     <h3>${escapeHtml(unit.name)}</h3>
                     <div class="admin-unit-actions">
+                        <button class="order-btn" title="上移" ${unitIdx === 0 ? 'disabled' : ''} onclick="moveUnit('${unit.id}', -1)">↑</button>
+                        <button class="order-btn" title="下移" ${unitIdx === appData.units.length - 1 ? 'disabled' : ''} onclick="moveUnit('${unit.id}', 1)">↓</button>
                         <button class="btn-add-item" onclick="addSlide('${unit.id}')">+ 添加页面</button>
                         <button class="btn-edit-unit" onclick="editUnit('${unit.id}')">改名</button>
                         <button class="btn-delete-unit" onclick="deleteUnit('${unit.id}')">删除</button>
@@ -1812,6 +1843,7 @@ function renderFileList(files, totalSize) {
             html += '<div class="file-item-name">' + escapeHtml(f.name) + '</div>';
             html += '<div class="file-item-meta">' + formatFileSize(f.size) + ' · ' + ext + (dateStr ? ' · ' + dateStr : '') + '</div>';
             html += '</div>';
+            html += '<button class="file-item-preview" onclick="previewFile(\'' + escapeAttr(f.folder) + '\', \'' + escapeAttr(f.name) + '\', \'' + escapeAttr(f.mimetype || '') + '\')">预览</button>';
             html += '<button class="file-item-delete" onclick="deleteStorageFile(\'' + escapeAttr(f.folder) + '\', \'' + escapeAttr(f.name) + '\')">删除</button>';
             html += '</div>';
         });
@@ -1836,6 +1868,48 @@ async function deleteStorageFile(folder, filename) {
     } catch (e) {
         showToast('删除失败：' + (e.message || '网络错误'), 'error');
     }
+}
+
+// ====== 文件预览 ======
+function filePublicUrl(folder, name) {
+    return SUPABASE_URL + '/storage/v1/object/public/media/' + folder + '/' + name;
+}
+
+var IMAGE_EXTS = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp'];
+var VIDEO_EXTS = ['mp4', 'webm', 'ogg', 'mov', 'avi'];
+var AUDIO_EXTS = ['mp3', 'wav', 'flac', 'aac', 'm4a'];
+
+function previewFile(folder, name, mimetype) {
+    var url = filePublicUrl(folder, name);
+    var ext = getFileExt(name).toLowerCase();
+    var type = (mimetype || '').toLowerCase();
+    var mediaHtml = '';
+
+    if (IMAGE_EXTS.includes(ext) || type.indexOf('image/') === 0) {
+        mediaHtml = '<img class="file-preview-media" src="' + escapeAttr(url) + '" alt="' + escapeAttr(name) + '">';
+    } else if (VIDEO_EXTS.includes(ext) || type.indexOf('video/') === 0) {
+        mediaHtml = '<video class="file-preview-media" controls autoplay src="' + escapeAttr(url) + '"></video>';
+    } else if (AUDIO_EXTS.includes(ext) || type.indexOf('audio/') === 0) {
+        mediaHtml = '<audio class="file-preview-media" controls autoplay src="' + escapeAttr(url) + '"></audio>';
+    } else if (ext === 'pdf' || type === 'application/pdf') {
+        mediaHtml = '<iframe class="file-preview-media" src="' + escapeAttr(url) + '"></iframe>';
+    } else {
+        mediaHtml = '<div class="file-preview-fallback">' +
+            '<div class="file-preview-fallback-icon">' + getFileIcon(name) + '</div>' +
+            '<div class="file-preview-fallback-name">' + escapeHtml(name) + '</div>' +
+            '<a class="btn btn-primary" href="' + escapeAttr(url) + '" target="_blank" rel="noopener">打开 / 下载</a>' +
+            '</div>';
+    }
+
+    $('file-preview-media').innerHTML = mediaHtml;
+    $('file-preview-title').textContent = name;
+    $('file-preview-overlay').classList.add('show');
+}
+
+function closeFilePreview() {
+    var o = $('file-preview-overlay');
+    o.classList.remove('show');
+    $('file-preview-media').innerHTML = '';
 }
 
 // ====== 触摸滑动 ======
