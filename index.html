@@ -20,23 +20,24 @@
                 <circle cx="10" cy="24" r="3" fill="var(--gold)"/>
                 <circle cx="24" cy="20" r="3" fill="var(--gold)"/>
             </svg>
-            <span class="header-title">音乐教学演示台</span>
+            <span class="header-title" id="site-title">音乐教学演示台</span>
         </div>
     </header>
     <main class="dashboard-main">
         <div class="dashboard-hero">
-            <h2>课程单元</h2>
-            <p>悬停查看单元 · 点击开始演示</p>
+            <h2 id="dashboard-title">课程单元</h2>
+            <p id="dashboard-subtitle">悬停查看单元 · 点击开始演示</p>
         </div>
         <div id="units-grid" class="units-grid"></div>
-        <div class="stack-caption" id="stack-caption"></div>
         <div id="dashboard-empty" class="empty-state" style="display:none;">
             <p>还没有内容，点击「管理内容」添加吧</p>
         </div>
     </main>
     <div class="screen-footer">
-        <button id="btn-logout" class="btn btn-ghost">退出</button>
-        <button id="btn-admin" class="btn btn-glass">管理内容</button>
+        <div class="footer-actions">
+            <button class="dot-btn" id="btn-admin" title="管理内容"></button>
+            <button class="dot-btn" id="btn-logout" title="退出"></button>
+        </div>
     </div>
 </div>
 
@@ -59,7 +60,7 @@
             <button id="btn-toc" class="dot-btn" title="目录">
                 <svg viewBox="0 0 24 24" width="22" height="22"><path d="M4 7 H20 M4 12 H20 M4 17 H20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></svg>
             </button>
-            <button id="btn-admin-pres" class="dot-btn" title="管理">
+            <button id="btn-admin-pres" class="dot-btn" title="内容管理">
                 <svg viewBox="0 0 24 24" width="22" height="22"><path d="M12 5 L19 19 L5 19 Z" stroke="currentColor" stroke-width="2" fill="none" stroke-linejoin="round"/></svg>
             </button>
             <button id="btn-fullscreen" class="dot-btn" title="全屏（F）">
@@ -92,14 +93,18 @@
         </div>
     </header>
     <main class="admin-main">
+        <div id="admin-site-texts" class="admin-site-texts"></div>
+        <div class="admin-toolbar">
+            <h3>单元列表</h3>
+            <button id="btn-add-unit" class="btn btn-primary">+ 新建单元</button>
+        </div>
         <div id="admin-units-list" class="admin-units-list"></div>
     </main>
     <div class="screen-footer">
-        <button id="btn-back-dashboard" class="btn btn-ghost btn-small"><svg viewBox="0 0 24 24" width="18" height="18"><path d="M15 6 L9 12 L15 18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg> 返回</button>
         <div class="footer-actions">
-            <button id="btn-files" class="btn btn-glass">文件管理</button>
-            <button id="btn-password" class="btn btn-glass">修改密码</button>
-            <button id="btn-add-unit" class="btn btn-gold">新建单元</button>
+            <button class="dot-btn" id="btn-files" title="文件管理"></button>
+            <button class="dot-btn" id="btn-password" title="修改密码"></button>
+            <button class="dot-btn" id="btn-back-dashboard" title="返回"></button>
         </div>
     </div>
 </div>
@@ -139,7 +144,9 @@
         <div id="file-list-container" class="file-list-container"></div>
     </main>
     <div class="screen-footer">
-        <button id="btn-back-admin" class="btn btn-ghost btn-small"><svg viewBox="0 0 24 24" width="18" height="18"><path d="M15 6 L9 12 L15 18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg> 返回</button>
+        <div class="footer-actions">
+            <button class="dot-btn" id="btn-back-admin" title="返回"></button>
+        </div>
     </div>
 </div>
 

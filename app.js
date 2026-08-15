@@ -12,7 +12,15 @@ const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 const UNIT_PALETTE = ['#5e7280','#a87c57','#7d9069','#8d6f82','#a78f63','#9c7b6e','#6f8aa0','#8a7da0','#7a9c8a','#b09a6a'];
 
 // ====== 状态 ======
-let appData = { password: '1234', units: [] };
+let appData = {
+    password: '1234',
+    units: [],
+    site: {
+        title: '音乐教学演示台',
+        dashboardTitle: '课程单元',
+        dashboardSubtitle: '悬停查看单元 · 点击开始演示'
+    }
+};
 let pendingCoverImage = null;   // 单元编辑弹窗中待保存的封面图 URL
 let coverUploadPromise = null;  // 封面上传进行中的 Promise，保存前需先等其完成
 let currentUnitIndex = -1;
@@ -31,11 +39,8 @@ let ivIndex = 0;
 let ivLoadSeq = 0;
 let ivClickTimer = null;
 let ivHideTimer = null;
-let exploreActive = false;
-let exploreCollapseTimer = null;
-let exploreResizeHandler = null;
-let exploreCurrentIdx = -1;
-let exploreLayoutInfo = null;
+let pendingEditUnitId = null;   // 卡片编辑入口待验证密码后打开的单元
+let adminAuthed = false;        // 是否已通过管理员密码验证（验证后卡片才显示编辑圆点）
 
 // 临时存储编辑中的图片列表 [{url, isExisting}]
 let editingImages = [];
@@ -269,6 +274,9 @@ async function loadData() {
     if (sErr) throw sErr;
 
     const { data: pwdRow } = await sb.from('app_settings').select('*').eq('key', 'password').single();
+    const { data: siteRows } = await sb.from('app_settings').select('*').in('key', ['site_title', 'dashboard_title', 'dashboard_subtitle']);
+    const siteMap = {};
+    (siteRows || []).forEach(r => { siteMap[r.key] = r.value; });
 
     const unitsWithSlides = (units || []).map(u => ({
         id: u.id,
@@ -286,7 +294,12 @@ async function loadData() {
 
     return {
         password: pwdRow?.value || '1234',
-        units: unitsWithSlides
+        units: unitsWithSlides,
+        site: {
+            title: siteMap.site_title || '音乐教学演示台',
+            dashboardTitle: siteMap.dashboard_title || '课程单元',
+            dashboardSubtitle: siteMap.dashboard_subtitle || '悬停查看单元 · 点击开始演示'
+        }
     };
 }
 
@@ -511,7 +524,7 @@ async function saveUnitCoverImage(unitIdx) {
         showToast('封面已更新', 'success');
     } catch (e) {
         showToast('保存失败：' + (e.message || '网络错误'), 'error');
-        if (btn) { btn.textContent = '保存'; btn.disabled = false; }
+        if (btn) { btn.textContent = '保存首页文字'; btn.disabled = false; }
     }
 }
 
@@ -556,15 +569,6 @@ function renderDashboard() {
     const grid = $('units-grid');
     const empty = $('dashboard-empty');
 
-    // 每次重新渲染都从居中的卡片堆开始
-    exploreActive = false;
-    exploreCurrentIdx = -1;
-    clearTimeout(exploreCollapseTimer);
-    if (exploreResizeHandler) {
-        window.removeEventListener('resize', exploreResizeHandler);
-        exploreResizeHandler = null;
-    }
-
     if (!appData.units || appData.units.length === 0) {
         grid.innerHTML = '';
         grid.className = 'units-grid';
@@ -583,189 +587,15 @@ function renderDashboard() {
         const thumbHtml = coverImg
             ? `<div class="thumb has-cover" style="background-image:url('${escapeAttr(coverImg)}')"></div>`
             : `<div class="thumb"><span>${icon}</span></div>`;
-        return `<div class="stack-card" data-idx="${index}" style="--c:${color}" title="${escapeAttr(unit.name)}">${thumbHtml}</div>`;
+        return `<div class="stack-card" data-idx="${index}" style="--c:${color}" title="${escapeAttr(unit.name)}">${thumbHtml}
+            <button class="card-edit-dot" title="编辑标题" onclick="event.stopPropagation(); editCardTitle('${unit.id}')"></button>
+        </div>`;
     }).join('') + '</div>';
-    grid.insertAdjacentHTML('beforeend',
-        '<div class="stack-preview" id="stack-preview">' +
-        '<div class="sp-card" id="sp-card"><span class="sp-icon" id="sp-icon"></span></div>' +
-        '<div class="sp-name" id="sp-name"></div>' +
-        '<div class="sp-sub" id="sp-sub"></div>' +
-        '</div>');
 
-    const cards = Array.prototype.slice.call(grid.querySelectorAll('.stack-card'));
-    const stack = grid.querySelector('.stack');
-    cards.forEach(c => {
+    grid.querySelectorAll('.stack-card').forEach(c => {
         c.addEventListener('click', () => startPresentation(+c.dataset.idx, c));
-        c.addEventListener('mouseenter', () => {
-            const idx = parseInt(c.dataset.idx, 10);
-            enterExplore(grid, stack, cards);
-            setCurrentCard(cards, idx);
-        });
     });
-
-    // 中间展示台：点击直接打开当前单元
-    const preview = $('sp-card');
-    if (preview) {
-        preview.addEventListener('click', () => {
-            if (exploreCurrentIdx >= 0) startPresentation(exploreCurrentIdx, null);
-        });
-    }
-
-    // 鼠标进入/离开卡片区域：进入时展开，离开后延迟收起
-    grid.addEventListener('mouseenter', () => clearTimeout(exploreCollapseTimer));
-    grid.addEventListener('mouseleave', () => {
-        clearTimeout(exploreCollapseTimer);
-        exploreCollapseTimer = setTimeout(exitExplore, 300);
-    });
-
     updateStackPositions(grid);
-    updateStackCaption(0);
-    updatePreview(0);
-}
-
-// 是否支持展开交互（桌面 + 有鼠标悬停）
-function canExplore() {
-    return !!(window.matchMedia && window.matchMedia('(hover: hover)').matches) && window.innerWidth >= 900;
-}
-
-// 进入 explore：整组卡片让到左侧竖向排列，中间展示当前卡片
-function enterExplore(grid, stack, cards) {
-    if (exploreActive) return;
-    if (!canExplore()) return;
-    exploreActive = true;
-    grid.classList.add('explore');
-    if (stack) stack.classList.add('explore');
-    exploreLayoutInfo = layoutExplore(grid, stack, cards);
-
-    // 卡片多到放不下时，跟随鼠标上下滚动
-    grid.addEventListener('mousemove', function(e) {
-        if (!exploreActive || !exploreLayoutInfo || exploreLayoutInfo.scrollRange <= 0) return;
-        const st = this.querySelector('.stack');
-        if (!st) return;
-        const frac = (e.clientY - exploreLayoutInfo.railTop) / exploreLayoutInfo.areaH;
-        const t = Math.max(0, Math.min(1, frac));
-        st.style.setProperty('--rail-scroll', (t * exploreLayoutInfo.scrollRange).toFixed(1));
-    });
-
-    if (exploreResizeHandler) window.removeEventListener('resize', exploreResizeHandler);
-    exploreResizeHandler = function() {
-        if (!canExplore()) { exitExplore(); return; }
-        if (exploreActive) exploreLayoutInfo = layoutExplore(grid, stack, cards);
-    };
-    window.addEventListener('resize', exploreResizeHandler);
-}
-
-// 退出 explore：卡片回到居中叠放，下方提示条保留当前卡片
-function exitExplore() {
-    if (!exploreActive) return;
-    exploreActive = false;
-    clearTimeout(exploreCollapseTimer);
-    const grid = $('units-grid');
-    if (!grid) return;
-    grid.classList.remove('explore');
-    const stack = grid.querySelector('.stack');
-    if (stack) {
-        stack.classList.remove('explore');
-        stack.style.setProperty('--rail-scroll', 0);
-    }
-    exploreLayoutInfo = null;
-}
-
-// 计算左侧竖排位置：写入 --ex-dx / --ex-dy / --ex-s
-function layoutExplore(grid, stack, cards) {
-    if (!grid) return;
-    const gridRect = grid.getBoundingClientRect();
-    const vh = window.innerHeight;
-    const N = cards.length;
-    const scale = 0.34;
-    const cardH = 269 * scale;
-
-    // 竖向排列的高度不超过中间展示卡片的高度
-    const spCard = $('sp-card');
-    let areaH = spCard ? spCard.getBoundingClientRect().height : 380;
-    areaH = Math.max(180, Math.min(areaH, vh - 180));
-
-    // 叠放：后一张只露出上方一小部分；能放下就保持 34px 露边，放不下则压缩
-    const MIN_STRIP = 18;
-    let spacing = N > 1 ? Math.min(34, (areaH - cardH) / (N - 1)) : 0;
-    if (spacing < MIN_STRIP) spacing = MIN_STRIP;
-    const railH = (N - 1) * spacing + cardH;
-
-    // 与中间展示卡片垂直居中对齐
-    const startY = gridRect.top + Math.max(0, (gridRect.height - railH) / 2);
-    const railLeft = gridRect.left + 24;
-
-    if (stack) stack.style.setProperty('--rail-scroll', 0);
-    cards.forEach((c, i) => {
-        const r = c.getBoundingClientRect();
-        const dx = railLeft - r.left;
-        // 顺序与斜向一致：第一张在最下方，后面的依次往上叠
-        const dy = (startY + (N - 1 - i) * spacing) - r.top;
-        c.style.setProperty('--ex-dx', dx.toFixed(1));
-        c.style.setProperty('--ex-dy', dy.toFixed(1));
-        c.style.setProperty('--ex-s', scale);
-    });
-
-    return {
-        railTop: startY,
-        areaH: areaH,
-        scrollRange: Math.max(0, railH - areaH)
-    };
-}
-
-// 设置当前展示的卡片：竖排高亮 + 中间展示台 + 下方提示条
-function setCurrentCard(cards, idx) {
-    exploreCurrentIdx = idx;
-    cards.forEach(o => o.classList.remove('current'));
-    const c = cards[idx];
-    if (c) c.classList.add('current');
-    updatePreview(idx);
-    updateStackCaption(idx);
-}
-
-// 中间展示台内容
-function updatePreview(idx) {
-    const card = $('sp-card');
-    if (!card) return;
-    const iconEl = $('sp-icon');
-    const nameEl = $('sp-name');
-    const subEl = $('sp-sub');
-    const unit = appData.units[idx];
-    if (!unit) {
-        card.className = 'sp-card';
-        card.style.backgroundImage = '';
-        if (iconEl) iconEl.textContent = '';
-        if (nameEl) nameEl.textContent = '';
-        if (subEl) subEl.textContent = '';
-        return;
-    }
-    const slides = unit.slides || [];
-    const icon = unit.icon || getUnitCoverIcon(slides);
-    const coverImg = (slides[0] && slides[0].images && slides[0].images[0]) || '';
-    card.style.setProperty('--unit-color', UNIT_PALETTE[idx % UNIT_PALETTE.length]);
-    card.className = 'sp-card' + (coverImg ? ' has-cover' : '');
-    card.style.backgroundImage = coverImg ? "url('" + escapeAttr(coverImg) + "')" : '';
-    if (iconEl) iconEl.textContent = icon;
-    if (nameEl) nameEl.textContent = unit.name;
-    if (subEl) subEl.textContent = (icon ? icon + ' · ' : '') + slides.length + ' 页';
-}
-
-// 首页卡片堆下方的单元预览条：缩略图 + 名称 + 页数（悬停时切换）
-function updateStackCaption(idx) {
-    const cap = $('stack-caption');
-    if (!cap) return;
-    const unit = appData.units[idx];
-    if (!unit) { cap.innerHTML = ''; return; }
-    const slides = unit.slides || [];
-    const icon = unit.icon || getUnitCoverIcon(slides);
-    const coverImg = (unit.slides && unit.slides[0] && unit.slides[0].images && unit.slides[0].images[0]) || '';
-    const thumbHtml = coverImg
-        ? '<span class="sc-thumb" style="background-image:url(\'' + escapeAttr(coverImg) + '\');background-size:cover;background-position:center;"></span>'
-        : '<span class="sc-thumb">' + icon + '</span>';
-    cap.style.setProperty('--unit-color', UNIT_PALETTE[idx % UNIT_PALETTE.length]);
-    cap.innerHTML = thumbHtml +
-        '<div class="sc-info"><div class="sc-name">' + escapeHtml(unit.name) + '</div>' +
-        '<div class="sc-sub">' + escapeHtml(icon ? icon + ' · ' : '') + slides.length + ' 页</div></div>';
 }
 
 // 卡片按数组顺序叠成一摞：最前一张在左下，越往后越向右上错开，
@@ -1539,14 +1369,37 @@ function showAdminPasswordModal() {
     }, 200);
 }
 
+// 卡片编辑入口：已通过密码验证则直接编辑，否则先验证密码
+function editCardTitle(unitId) {
+    if (adminAuthed) {
+        editUnit(unitId);
+    } else {
+        requestEditUnit(unitId);
+    }
+}
+
+// 卡片编辑入口（未验证时）：先验证管理密码，通过后再打开标题编辑
+function requestEditUnit(unitId) {
+    pendingEditUnitId = unitId;
+    showAdminPasswordModal();
+}
+
 function verifyAdminPassword() {
     var input = $('admin-password-input');
     var hint = $('admin-password-hint');
     if (!input) return;
 
     if (input.value === appData.password) {
+        adminAuthed = true;
+        document.body.classList.add('admin-mode');
         closeModal();
-        renderAdmin();
+        if (pendingEditUnitId) {
+            const unitId = pendingEditUnitId;
+            pendingEditUnitId = null;
+            editUnit(unitId);
+        } else {
+            renderAdmin();
+        }
     } else {
         hint.textContent = '密码错误，请重试';
         input.classList.add('shake');
@@ -1560,6 +1413,7 @@ function verifyAdminPassword() {
 function renderAdmin() {
     switchScreen('admin-screen');
     renderAdminUnits();
+    renderSiteTexts();
 }
 
 function renderAdminUnits() {
@@ -1762,7 +1616,11 @@ async function updateUnit(unitId) {
         }
         pendingCoverImage = null;
         closeModal();
-        renderAdminUnits();
+        if ($('dashboard-screen').classList.contains('active')) {
+            renderDashboard();
+        } else {
+            renderAdminUnits();
+        }
         showToast('已保存', 'success');
     } catch (e) {
         showToast('保存失败：' + (e.message || '网络错误'), 'error');
@@ -2171,6 +2029,76 @@ async function savePassword() {
     }
 }
 
+// 把首页文字应用到界面
+function applySiteTexts() {
+    const s = appData.site || {};
+    const title = s.title || '音乐教学演示台';
+    const dashTitle = s.dashboardTitle || '课程单元';
+    const dashSub = s.dashboardSubtitle || '悬停查看单元 · 点击开始演示';
+    const st = $('site-title');
+    if (st) st.textContent = title;
+    const dt = $('dashboard-title');
+    if (dt) dt.textContent = dashTitle;
+    const ds = $('dashboard-subtitle');
+    if (ds) ds.textContent = dashSub;
+    document.title = title;
+}
+
+// 内容管理页顶部：编辑首页文字（站名 / 主标题 / 副标题）
+function renderSiteTexts() {
+    const container = $('admin-site-texts');
+    if (!container) return;
+    const s = appData.site || {};
+    container.innerHTML = `
+        <div class="admin-site-card">
+            <div class="admin-site-header">
+                <h3>首页文字</h3>
+                <p>修改首页顶部的站名与标题</p>
+            </div>
+            <div class="admin-site-grid">
+                <div class="form-group">
+                    <label>网站标题（顶部站名）</label>
+                    <input type="text" id="site-title-input" value="${escapeHtml(s.title || '音乐教学演示台')}" />
+                </div>
+                <div class="form-group">
+                    <label>首页主标题</label>
+                    <input type="text" id="dashboard-title-input" value="${escapeHtml(s.dashboardTitle || '课程单元')}" />
+                </div>
+                <div class="form-group">
+                    <label>首页副标题</label>
+                    <input type="text" id="dashboard-subtitle-input" value="${escapeHtml(s.dashboardSubtitle || '悬停查看单元 · 点击开始演示')}" />
+                </div>
+            </div>
+            <button class="btn btn-primary" id="btn-save-site-texts" onclick="saveSiteTexts()">保存首页文字</button>
+        </div>
+    `;
+}
+
+async function saveSiteTexts() {
+    const title = ($('site-title-input') ? $('site-title-input').value : '').trim() || '音乐教学演示台';
+    const dashTitle = ($('dashboard-title-input') ? $('dashboard-title-input').value : '').trim() || '课程单元';
+    const dashSub = ($('dashboard-subtitle-input') ? $('dashboard-subtitle-input').value : '').trim() || '悬停查看单元 · 点击开始演示';
+
+    const btn = $('btn-save-site-texts');
+    if (btn) { btn.textContent = '保存中...'; btn.disabled = true; }
+
+    try {
+        const now = new Date().toISOString();
+        await sb.from('app_settings').upsert([
+            { key: 'site_title', value: title, updated_at: now },
+            { key: 'dashboard_title', value: dashTitle, updated_at: now },
+            { key: 'dashboard_subtitle', value: dashSub, updated_at: now }
+        ]);
+        appData.site = { title: title, dashboardTitle: dashTitle, dashboardSubtitle: dashSub };
+        applySiteTexts();
+        renderSiteTexts();
+        showToast('首页文字已更新', 'success');
+    } catch (e) {
+        showToast('保存失败：' + (e.message || '网络错误'), 'error');
+        if (btn) { btn.textContent = '保存'; btn.disabled = false; }
+    }
+}
+
 // ====== 文件管理 ======
 const STORAGE_LIMIT_BYTES = 1024 * 1024 * 1024; // 1GB
 const STORAGE_FOLDERS = [
@@ -2522,6 +2450,7 @@ async function init() {
     } catch (e) {
         console.error('加载失败:', e);
     }
+    applySiteTexts();
     switchScreen('dashboard-screen');
     renderDashboard();
 }
