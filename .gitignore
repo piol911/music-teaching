@@ -1,1 +1,6 @@
 .DS_Store
+node_modules/
+*.log
+
+# 阿里云 OSS 真实凭证（用户通过 GitHub web UI 上传，不进入 git 历史）
+oss-keys.js

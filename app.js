@@ -1,12 +1,134 @@
 /* ============================================
-   音乐教学演示台 v4 — 浅色主题 + 多图 + 图片放大 + B站视频
-   数据存储：Supabase (PostgreSQL + Storage)
+   音乐教学演示台 — 后端：阿里云 OSS（单文件 JSON 数据库 + 媒体存储）
+   - 数据：OSS 上 db/app.json 一个文件，浏览器内存维护 appData
+   - 媒体：OSS 上 media/{images,videos,audio,covers}/ 文件夹
+   - 写策略：last-write-wins（单用户多设备够用）
    ============================================ */
 
-// ====== Supabase 配置 ======
-const SUPABASE_URL = 'https://dgffaxdaorwzsqyrkfxd.supabase.co';
-const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRnZmZheGRhb3J3enNxeXJrZnhkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ4MTcwOTYsImV4cCI6MjEwMDM5MzA5Nn0.NZ-4BIGMwhbFp-KUrV6e7hReBGyyRaSVdH7o07yOpB8';
-const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+// ====== 数据库对象 key（OSS 上唯一文件） ======
+const DB_OBJECT_KEY = 'db/app.json';
+
+// 兼容旧逻辑（OSS 已不用 bucket 名作为前缀，但仍保留以兼容部分数据）
+const STORAGE_BUCKET = 'media';
+
+// ====== 阿里云 OSS 客户端 ======
+let ossClient = null;
+
+function getOSSClient() {
+    if (ossClient) return ossClient;
+    if (typeof OSS === 'undefined') {
+        throw new Error('OSS SDK 未加载，请检查 index.html 是否引入 aliyun-oss-sdk');
+    }
+    if (!OSS_CONFIG || !OSS_CONFIG.accessKeyId) {
+        throw new Error('OSS_CONFIG 未配置，请检查 oss-config.js');
+    }
+
+    const config = {
+        region: OSS_CONFIG.region,
+        bucket: OSS_CONFIG.bucket,
+        accessKeyId: OSS_CONFIG.accessKeyId,
+        accessKeySecret: OSS_CONFIG.accessKeySecret,
+        secure: true,
+        // 阿里云 SDK v6 需要 refreshSTSToken 间隔
+        refreshSTSTokenInterval: 300000
+    };
+
+    // 如果配置了 STS URL，使用 STS 模式（更安全）
+    if (OSS_CONFIG.stsUrl) {
+        config.stsTokenFn = async () => {
+            const res = await fetch(OSS_CONFIG.stsUrl);
+            if (!res.ok) throw new Error('STS 获取失败');
+            return await res.json();
+        };
+    }
+
+    ossClient = new OSS(config);
+    return ossClient;
+}
+
+// 生成 OSS 文件的访问 URL
+function ossUrl(objectKey) {
+    if (!objectKey) return '';
+    // 已是完整 URL（http/https/data:），原样返回
+    if (/^(https?:|data:)/.test(objectKey)) return objectKey;
+    // CDN 域名优先
+    if (OSS_CONFIG.cdnDomain) {
+        return OSS_CONFIG.cdnDomain.replace(/\/$/, '') + '/' + objectKey.replace(/^\//, '');
+    }
+    // 默认 OSS 域名
+    return 'https://' + OSS_CONFIG.bucket + '.' + OSS_CONFIG.region + '.aliyuncs.com/' + objectKey.replace(/^\//, '');
+}
+
+// 判断 URL 是否来自 OSS（用于兼容旧 CloudBase URL 的判断）
+function isOSSUrl(url) {
+    if (!url) return false;
+    return /^https?:\/\/[^/]*\.aliyuncs\.com/.test(url)
+        || (OSS_CONFIG.cdnDomain && url.indexOf(OSS_CONFIG.cdnDomain) === 0);
+}
+
+// 列出 OSS 中所有文件（自动翻页）
+async function ossListAll(prefix) {
+    const client = getOSSClient();
+    const allFiles = [];
+    let continuationToken = null;
+
+    do {
+        const result = await client.list({
+            prefix: prefix || '',
+            'max-keys': 1000,
+            continuationToken: continuationToken || undefined,
+            delimiter: '/'
+        }, {});
+        if (result.objects) allFiles.push(...result.objects);
+        continuationToken = result.nextContinuationToken;
+    } while (continuationToken);
+
+    return allFiles;
+}
+
+// 计算 OSS 中某个前缀的总占用大小
+async function ossGetFolderSize(prefix) {
+    const files = await ossListAll(prefix);
+    return {
+        count: files.length,
+        size: files.reduce((sum, f) => sum + (f.size || 0), 0),
+        files: files
+    };
+}
+
+// 从 OSS URL 解析出 object key
+function ossKeyFromUrl(url) {
+    if (!url) return '';
+    // CDN 域名
+    if (OSS_CONFIG.cdnDomain && url.indexOf(OSS_CONFIG.cdnDomain) === 0) {
+        return url.substring(OSS_CONFIG.cdnDomain.length).replace(/^\//, '');
+    }
+    // OSS 默认域名 https://{bucket}.{region}.aliyuncs.com/{key}
+    const m = url.match(/^https?:\/\/[^/]+\/(.+)$/);
+    if (m) return m[1];
+    return '';
+}
+
+// ====== 兼容占位（CloudBase 已废弃，调用返回错误以便排查遗留代码） ======
+const cbApp = null, cbAuth = null, cbDb = null, cbStorage = null;
+async function cbSignIn() { /* no-op */ }
+
+// 异步保存队列（避免并发 PUT 互相覆盖）
+let _saveQueue = Promise.resolve();
+async function saveAppData() {
+    // 串行化保存：上一个 PUT 完成后才发起下一个
+    _saveQueue = _saveQueue.then(async () => {
+        var client = getOSSClient();
+        var payload = JSON.stringify(appData);
+        await client.put(DB_OBJECT_KEY, new Blob([payload], { type: 'application/json' }), {
+            headers: { 'Content-Type': 'application/json', 'x-oss-forbid-overwrite': 'false' }
+        });
+    }).catch(e => {
+        console.error('保存到 OSS 失败：', e);
+        showToast('云端保存失败：' + (e.message || '网络错误'), 'error');
+    });
+    return _saveQueue;
+}
 
 // 低饱和莫兰迪色系，单元按顺序循环取色（与 preview.html 一致）
 const UNIT_PALETTE = ['#5e7280','#a87c57','#7d9069','#8d6f82','#a78f63','#9c7b6e','#6f8aa0','#8a7da0','#7a9c8a','#b09a6a'];
@@ -266,160 +388,119 @@ function bindGalleryEvents(container) {
     // 缩略图点击事件已移至 bindThumbBarEvents（底部固定横条）
 }
 
+// ====== 数据层：OSS 上 db/app.json 单文件数据库 ======
 async function loadData() {
-    const { data: units, error: uErr } = await sb.from('units').select('*').order('sort_order', { ascending: true });
-    if (uErr) throw uErr;
-
-    const { data: slides, error: sErr } = await sb.from('slides').select('*').order('sort_order', { ascending: true });
-    if (sErr) throw sErr;
-
-    const { data: pwdRow } = await sb.from('app_settings').select('*').eq('key', 'password').single();
-    const { data: siteRows } = await sb.from('app_settings').select('*').in('key', ['site_title', 'dashboard_title', 'dashboard_subtitle']);
-    const siteMap = {};
-    (siteRows || []).forEach(r => { siteMap[r.key] = r.value; });
-
-    const unitsWithSlides = (units || []).map(u => ({
-        id: u.id,
-        name: u.name,
-        icon: parseUnitIcon(u.description), // 章节图标复用在 description 列（仅短图标，长文本不作图标）
-        slides: (slides || []).filter(s => s.unit_id === u.id).map(s => ({
-            id: s.id,
-            title: s.title,
-            images: parseImages(s.image_url),
-            videos: parseVideos(s.video_url),
-            audio: s.audio_url,
-            text: s.text_content
-        }))
-    }));
-
-    return {
-        password: pwdRow?.value || '1234',
-        units: unitsWithSlides,
-        site: {
-            title: siteMap.site_title || '音乐教学演示台',
-            dashboardTitle: siteMap.dashboard_title || '课程单元',
-            dashboardSubtitle: siteMap.dashboard_subtitle || '悬停查看单元 · 点击开始演示'
+    try {
+        var client = getOSSClient();
+        var result = await client.get(DB_OBJECT_KEY);
+        var text = '';
+        if (typeof result.content === 'string') text = result.content;
+        else if (result.content instanceof Blob) text = await result.content.text();
+        else text = result.content.toString();
+        var data = JSON.parse(text);
+        if (!data.units) data.units = [];
+        if (!data.files) data.files = [];
+        return data;
+    } catch (e) {
+        // NoSuchKey 表示首次启动，触发默认数据导入
+        if (e && (e.code === 'NoSuchKey' || e.name === 'NoSuchKeyError' || e.status === 404)) {
+            return null;
         }
-    };
+        throw e;
+    }
 }
 
 async function migrateDefaultData() {
-    const D = DEFAULT_DATA;
-    for (let i = 0; i < D.units.length; i++) {
-        const unit = D.units[i];
-        await sb.from('units').insert({
-            id: unit.id,
-            name: unit.name,
-            description: unit.description || '',
-            sort_order: i
-        });
-        const slides = unit.slides || [];
-        for (let j = 0; j < slides.length; j++) {
-            const s = slides[j];
-            // 把 image 字段转成 image_url（兼容单图）
-            const imageUrl = s.image || null;
-            // 把 video/videos 字段转成 video_url
-            const videoUrl = (s.videos && s.videos.length > 0) ? s.videos.join('\n') : (s.video || null);
-            await sb.from('slides').insert({
-                id: s.id,
-                unit_id: unit.id,
-                title: s.title || '',
-                image_url: imageUrl,
-                video_url: videoUrl,
-                audio_url: s.audio || null,
-                text_content: s.text || null,
-                sort_order: j
-            });
+    // 首次启动：从 data.js 默认数据初始化
+    appData = {
+        password: '1234',
+        units: JSON.parse(JSON.stringify(DEFAULT_DATA.units)),
+        files: [],
+        site: {
+            title: '音乐教学演示台',
+            dashboardTitle: '课程单元',
+            dashboardSubtitle: '悬停查看单元 · 点击开始演示'
         }
-    }
+    };
+    await saveAppData();
 }
 
-async function dbInsertUnit(name, icon) {
-    const id = generateId();
-    const sortOrder = appData.units.length;
-    const { error } = await sb.from('units').insert({
-        id: id,
-        name: name,
-        description: icon || '', // 章节图标
-        sort_order: sortOrder
-    });
-    if (error) throw error;
-    return { id: id, name: name, icon: icon || '', slides: [] };
+// 数据库操作：直接修改内存中的 appData，异步保存到 OSS
+function dbInsertUnit(name, icon) {
+    var id = generateId();
+    var unit = { id: id, name: name, icon: icon || '', slides: [] };
+    appData.units.push(unit);
+    saveAppData();
+    return Promise.resolve(unit);
 }
 
 async function dbUpdateUnit(unitId, name, icon) {
-    const { error } = await sb.from('units').update({ name: name, description: icon || '' }).eq('id', unitId);
-    if (error) throw error;
+    var u = appData.units.find(x => x.id === unitId);
+    if (!u) throw new Error('单元不存在：' + unitId);
+    u.name = name;
+    u.icon = icon || '';
+    await saveAppData();
 }
 
 async function dbDeleteUnit(unitId) {
-    await sb.from('slides').delete().eq('unit_id', unitId);
-    const { error } = await sb.from('units').delete().eq('id', unitId);
-    if (error) throw error;
+    appData.units = appData.units.filter(x => x.id !== unitId);
+    await saveAppData();
 }
 
 async function dbSaveSlide(slide, unitId, isEdit, editId) {
-    // 把 images 数组用 \n 拼接存入 image_url
-    const imageUrl = (slide.images && slide.images.length > 0) ? slide.images.join('\n') : null;
-    // 把 videos 数组用 \n 拼接存入 video_url
-    const videoUrl = (slide.videos && slide.videos.length > 0) ? slide.videos.join('\n') : null;
+    var unit = appData.units.find(x => x.id === unitId);
+    if (!unit) throw new Error('单元不存在：' + unitId);
 
-    const dbSlide = {
+    var slideData = {
         id: isEdit ? editId : generateId(),
-        unit_id: unitId,
         title: slide.title,
-        image_url: imageUrl,
-        video_url: videoUrl,
-        audio_url: slide.audio || null,
-        text_content: slide.text || null
+        images: slide.images || [],
+        videos: slide.videos || [],
+        audio: slide.audio || null,
+        text: slide.text || null
     };
 
     if (isEdit) {
-        const { error } = await sb.from('slides').update(dbSlide).eq('id', editId);
-        if (error) throw error;
-        return {
-            id: editId,
-            title: slide.title,
-            images: slide.images || [],
-            videos: slide.videos || [],
-            audio: slide.audio,
-            text: slide.text
-        };
+        var idx = unit.slides.findIndex(s => s.id === editId);
+        if (idx >= 0) unit.slides[idx] = slideData;
+        else unit.slides.push(slideData);
     } else {
-        const { data, error } = await sb.from('slides').insert(dbSlide).select().single();
-        if (error) throw error;
-        return {
-            id: data.id,
-            title: slide.title,
-            images: slide.images || [],
-            videos: slide.videos || [],
-            audio: slide.audio,
-            text: slide.text
-        };
+        unit.slides.push(slideData);
     }
+    await saveAppData();
+    return slideData;
 }
 
 async function dbDeleteSlide(slideId) {
-    const { error } = await sb.from('slides').delete().eq('id', slideId);
-    if (error) throw error;
+    for (var i = 0; i < appData.units.length; i++) {
+        appData.units[i].slides = appData.units[i].slides.filter(s => s.id !== slideId);
+    }
+    await saveAppData();
 }
 
 async function dbUpdatePassword(pwd) {
-    const { error } = await sb.from('app_settings').upsert({ key: 'password', value: pwd, updated_at: new Date().toISOString() });
-    if (error) throw error;
+    appData.password = pwd;
+    await saveAppData();
 }
 
 async function uploadFile(file, folder, onProgress) {
+    const client = getOSSClient();
     const ext = (file.name.split('.').pop() || 'bin').toLowerCase();
-    const fileName = folder + '/' + Date.now() + '-' + Math.random().toString(36).substr(2, 9) + '.' + ext;
+    const objectKey = folder + '/' + Date.now() + '-' + Math.random().toString(36).substr(2, 9) + '.' + ext;
 
-    const options = { cacheControl: '3600' };
-    if (typeof onProgress === 'function') options.onUploadProgress = onProgress;
-    const { error } = await sb.storage.from('media').upload(fileName, file, options);
-    if (error) throw error;
+    const headers = {
+        'Content-Type': file.type || 'application/octet-stream',
+        'x-oss-forbid-overwrite': 'false'
+    };
 
-    const { data } = sb.storage.from('media').getPublicUrl(fileName);
-    return data.publicUrl;
+    const options = { headers: headers };
+    if (typeof onProgress === 'function') {
+        // 阿里云 OSS SDK 进度回调参数：{ loaded, total, percent }
+        options.progress = onProgress;
+    }
+
+    const result = await client.put(objectKey, file, options);
+    return ossUrl(objectKey);
 }
 
 // 进度条辅助：把百分比(0~100)写到进度条填充层
@@ -629,11 +710,9 @@ function moveSlide(unitId, slideId, dir) {
 }
 
 async function saveSlidesOrder(unit) {
+    // 数组顺序就是显示顺序，只需把内存中的 appData 保存到 OSS
     try {
-        for (let i = 0; i < unit.slides.length; i++) {
-            const s = unit.slides[i];
-            await sb.from('slides').update({ sort_order: i }).eq('id', s.id);
-        }
+        await saveAppData();
     } catch (e) {
         showToast('页面顺序保存失败：' + (e.message || '网络错误'), 'error');
     }
@@ -654,11 +733,9 @@ function moveUnit(unitId, dir) {
 }
 
 async function saveUnitsOrder() {
+    // 数组顺序就是显示顺序
     try {
-        for (let i = 0; i < appData.units.length; i++) {
-            const u = appData.units[i];
-            await sb.from('units').update({ sort_order: i }).eq('id', u.id);
-        }
+        await saveAppData();
     } catch (e) {
         showToast('单元顺序保存失败：' + (e.message || '网络错误'), 'error');
     }
@@ -2083,13 +2160,8 @@ async function saveSiteTexts() {
     if (btn) { btn.textContent = '保存中...'; btn.disabled = true; }
 
     try {
-        const now = new Date().toISOString();
-        await sb.from('app_settings').upsert([
-            { key: 'site_title', value: title, updated_at: now },
-            { key: 'dashboard_title', value: dashTitle, updated_at: now },
-            { key: 'dashboard_subtitle', value: dashSub, updated_at: now }
-        ]);
         appData.site = { title: title, dashboardTitle: dashTitle, dashboardSubtitle: dashSub };
+        await saveAppData();
         applySiteTexts();
         renderSiteTexts();
         showToast('首页文字已更新', 'success');
@@ -2139,44 +2211,21 @@ async function showFileManager() {
     $('storage-bar-text').textContent = '...';
 
     try {
-        var allFiles = [];
+        // 从 OSS 列出所有文件夹下的文件（真实占用）
+        var folderResults = {};
         var totalSize = 0;
-        var total_count = 0;
+        var totalCount = 0;
 
         for (var i = 0; i < STORAGE_FOLDERS.length; i++) {
             var folder = STORAGE_FOLDERS[i];
-            var offset = 0;
-            var hasMore = true;
-
-            while (hasMore) {
-                var result = await sb.storage.from('media').list(folder.name, {
-                    limit: 1000,
-                    offset: offset,
-                    sortBy: { column: 'created_at', order: 'desc' }
-                });
-
-                if (result.error) throw result.error;
-                var items = (result.data || []).filter(function(f) {
-                    return f.name && !f.name.endsWith('.emptyFolderPlaceholder');
-                });
-
-                items.forEach(function(f) {
-                    var size = (f.metadata && f.metadata.size) ? f.metadata.size : 0;
-                    allFiles.push({
-                        name: f.name,
-                        folder: folder.name,
-                        folderLabel: folder.label,
-                        folderIcon: folder.icon,
-                        size: size,
-                        created_at: f.created_at,
-                        mimetype: f.metadata ? f.metadata.mimetype : ''
-                    });
-                    totalSize += size;
-                    total_count++;
-                });
-
-                hasMore = items.length === 1000;
-                offset += 1000;
+            try {
+                var r = await ossGetFolderSize(folder.name + '/');
+                folderResults[folder.name] = r;
+                totalSize += r.size;
+                totalCount += r.count;
+            } catch (e) {
+                console.warn('列出文件夹 ' + folder.name + ' 失败：', e);
+                folderResults[folder.name] = { count: 0, size: 0, files: [] };
             }
         }
 
@@ -2186,7 +2235,7 @@ async function showFileManager() {
 
         $('storage-used').textContent = formatFileSize(totalSize);
         $('storage-remaining').textContent = formatFileSize(Math.max(0, remaining));
-        $('storage-count').textContent = total_count + ' 个';
+        $('storage-count').textContent = totalCount + ' 个';
         $('storage-bar-fill').style.width = Math.min(100, percent) + '%';
         $('storage-bar-text').textContent = percent.toFixed(1) + '%';
 
@@ -2195,8 +2244,8 @@ async function showFileManager() {
         if (percent > 80) barFill.classList.add('danger');
         else if (percent > 60) barFill.classList.add('warning');
 
-        // 渲染文件列表
-        renderFileList(allFiles, totalSize);
+        // 渲染文件列表（用 OSS 真实数据）
+        renderFileListFromOSS(folderResults);
 
     } catch (e) {
         container.innerHTML = '<div class="file-empty">加载失败：' + escapeHtml(e.message || '未知错误') + '</div>';
@@ -2207,53 +2256,59 @@ async function showFileManager() {
     }
 }
 
-function renderFileList(files, totalSize) {
+function renderFileListFromOSS(folderResults) {
     var container = $('file-list-container');
 
-    if (files.length === 0) {
+    var totalCount = 0;
+    STORAGE_FOLDERS.forEach(function(folder) { totalCount += (folderResults[folder.name] || { count: 0 }).count; });
+
+    if (totalCount === 0) {
         container.innerHTML = '<div class="file-empty">还没有上传任何文件</div>';
         return;
     }
 
-    // 按文件夹分组
     var html = '';
     STORAGE_FOLDERS.forEach(function(folder) {
-        var folderFiles = files.filter(function(f) { return f.folder === folder.name; });
-        if (folderFiles.length === 0) return;
-
-        var folderSize = folderFiles.reduce(function(sum, f) { return sum + f.size; }, 0);
+        var r = folderResults[folder.name] || { count: 0, size: 0, files: [] };
+        if (r.count === 0) return;
 
         html += '<div class="file-folder-group">';
         html += '<div class="file-folder-header">';
         html += '<span class="folder-icon">' + folder.icon + '</span>';
         html += '<span>' + folder.label + '</span>';
-        html += '<span class="folder-count">' + folderFiles.length + ' 个文件 · ' + formatFileSize(folderSize) + '</span>';
+        html += '<span class="folder-count">' + r.count + ' 个文件 · ' + formatFileSize(r.size) + '</span>';
         html += '</div>';
 
-        folderFiles.forEach(function(f) {
-            var path = f.folder + '/' + f.name;
+        // 按时间倒序
+        var files = r.files.slice().sort(function(a, b) {
+            return new Date(b.lastModified || 0) - new Date(a.lastModified || 0);
+        });
+
+        files.forEach(function(f) {
+            var name = f.name.split('/').pop();
             var dateStr = '';
-            if (f.created_at) {
-                var d = new Date(f.created_at);
+            if (f.lastModified) {
+                var d = new Date(f.lastModified);
                 dateStr = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
             }
             var thumbHtml = '';
-            var ext = getFileExt(f.name);
+            var ext = getFileExt(name);
+            var fullUrl = ossUrl(f.name);
+            var mimetype = guessMimeType(name);
             if (folder.name === 'images') {
-                var publicUrl = SUPABASE_URL + '/storage/v1/object/public/media/' + path;
-                thumbHtml = '<img class="file-item-thumb" src="' + escapeAttr(publicUrl) + '" alt="" loading="lazy" />';
+                thumbHtml = '<img class="file-item-thumb" src="' + escapeAttr(fullUrl) + '" alt="" loading="lazy" />';
             } else {
-                thumbHtml = '<div class="file-item-icon">' + getFileIcon(f.name) + '</div>';
+                thumbHtml = '<div class="file-item-icon">' + getFileIcon(name) + '</div>';
             }
 
             html += '<div class="file-item">';
             html += thumbHtml;
             html += '<div class="file-item-info">';
-            html += '<div class="file-item-name">' + escapeHtml(f.name) + '</div>';
+            html += '<div class="file-item-name">' + escapeHtml(name) + '</div>';
             html += '<div class="file-item-meta">' + formatFileSize(f.size) + ' · ' + ext + (dateStr ? ' · ' + dateStr : '') + '</div>';
             html += '</div>';
-            html += '<button class="file-item-preview" onclick="previewFile(\'' + escapeAttr(f.folder) + '\', \'' + escapeAttr(f.name) + '\', \'' + escapeAttr(f.mimetype || '') + '\')">预览</button>';
-            html += '<button class="file-item-delete" onclick="deleteStorageFile(\'' + escapeAttr(f.folder) + '\', \'' + escapeAttr(f.name) + '\')">删除</button>';
+            html += '<button class="file-item-preview" onclick="previewFile(\'' + escapeAttr(fullUrl) + '\', \'' + escapeAttr(mimetype) + '\')">预览</button>';
+            html += '<button class="file-item-delete" onclick="deleteStorageFile(\'' + escapeAttr(f.name) + '\')">删除</button>';
             html += '</div>';
         });
 
@@ -2263,16 +2318,40 @@ function renderFileList(files, totalSize) {
     container.innerHTML = html;
 }
 
-async function deleteStorageFile(folder, filename) {
-    if (!confirm('确定删除文件 "' + filename + '" 吗？\n删除后无法恢复，且引用此文件的内容将无法正常显示。')) return;
+function guessMimeType(filename) {
+    var ext = (filename.split('.').pop() || '').toLowerCase();
+    var map = {
+        jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif', webp: 'image/webp', svg: 'image/svg+xml',
+        mp4: 'video/mp4', webm: 'video/webm', mov: 'video/quicktime',
+        mp3: 'audio/mpeg', wav: 'audio/wav', m4a: 'audio/mp4',
+        pdf: 'application/pdf'
+    };
+    return map[ext] || 'application/octet-stream';
+}
 
-    var path = folder + '/' + filename;
+async function deleteStorageFile(objectKey) {
+    if (!confirm('确定删除该文件吗？\n删除后无法恢复，且引用此文件的内容将无法正常显示。')) return;
+
     try {
-        var result = await sb.storage.from('media').remove([path]);
-        if (result.error) throw result.error;
+        await getOSSClient().delete(objectKey);
+
+        // 同时清理课件里引用此 URL 的字段（图片/视频/音频）
+        for (var i = 0; i < appData.units.length; i++) {
+            var u = appData.units[i];
+            for (var j = 0; j < u.slides.length; j++) {
+                var s = u.slides[j];
+                if (s.images && s.images.some(function(url) { return url.indexOf(objectKey) >= 0; })) {
+                    s.images = s.images.filter(function(url) { return url.indexOf(objectKey) < 0; });
+                }
+                if (s.videos && s.videos.some(function(url) { return url.indexOf(objectKey) >= 0; })) {
+                    s.videos = s.videos.filter(function(url) { return url.indexOf(objectKey) < 0; });
+                }
+                if (s.audio && s.audio.indexOf(objectKey) >= 0) s.audio = null;
+            }
+        }
+        await saveAppData();
 
         showToast('文件已删除', 'success');
-        // 刷新文件列表
         showFileManager();
     } catch (e) {
         showToast('删除失败：' + (e.message || '网络错误'), 'error');
@@ -2280,16 +2359,12 @@ async function deleteStorageFile(folder, filename) {
 }
 
 // ====== 文件预览 ======
-function filePublicUrl(folder, name) {
-    return SUPABASE_URL + '/storage/v1/object/public/media/' + folder + '/' + name;
-}
-
 var IMAGE_EXTS = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp'];
 var VIDEO_EXTS = ['mp4', 'webm', 'ogg', 'mov', 'avi'];
 var AUDIO_EXTS = ['mp3', 'wav', 'flac', 'aac', 'm4a'];
 
-function previewFile(folder, name, mimetype) {
-    var url = filePublicUrl(folder, name);
+function previewFile(url, mimetype) {
+    var name = decodeURIComponent(String(url).split('?')[0].split('/').pop());
     var ext = getFileExt(name).toLowerCase();
     var type = (mimetype || '').toLowerCase();
     var mediaHtml = '';
@@ -2439,16 +2514,26 @@ async function init() {
         }
     });
 
+    // 先异步加载阿里云 OSS 凭证（从同目录 oss-keys.js）
+    if (typeof loadOSSKeys === 'function') {
+        await loadOSSKeys();
+    }
+
     // 从云端加载数据，直接进入首页（无登录页）
     try {
-        appData = await loadData();
-        if (appData.units.length === 0) {
+        var loaded = await loadData();
+        if (loaded === null) {
+            // OSS 上还没有 db/app.json，初始化默认数据
             await migrateDefaultData();
-            appData = await loadData();
+            loaded = await loadData();
         }
+        if (loaded) appData = loaded;
+        if (!appData.files) appData.files = [];
         dataReady = true;
     } catch (e) {
         console.error('加载失败:', e);
+        var msg = (e && (e.message || e.errorMessage || e.errMsg)) || String(e);
+        showToast('数据加载失败：' + String(msg).slice(0, 100), 'error');
     }
     applySiteTexts();
     switchScreen('dashboard-screen');
