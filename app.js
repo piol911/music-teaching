@@ -2172,7 +2172,7 @@ async function saveSiteTexts() {
 }
 
 // ====== 文件管理 ======
-const STORAGE_LIMIT_BYTES = 1024 * 1024 * 1024; // 1GB
+// 注：阿里云 OSS 存储容量不限制（按量计费），无需容量上限展示
 const STORAGE_FOLDERS = [
     { name: 'images', label: '图片', icon: '\u{1F5BC}' },
     { name: 'videos', label: '视频', icon: '\u{1F3AC}' },
@@ -2205,10 +2205,7 @@ async function showFileManager() {
     var container = $('file-list-container');
     container.innerHTML = '<div class="file-empty">正在加载文件列表...</div>';
     $('storage-used').textContent = '...';
-    $('storage-remaining').textContent = '...';
     $('storage-count').textContent = '...';
-    $('storage-bar-fill').style.width = '0%';
-    $('storage-bar-text').textContent = '...';
 
     try {
         // 从 OSS 列出所有文件夹下的文件（真实占用）
@@ -2229,20 +2226,9 @@ async function showFileManager() {
             }
         }
 
-        // 更新存储概览
-        var remaining = STORAGE_LIMIT_BYTES - totalSize;
-        var percent = (totalSize / STORAGE_LIMIT_BYTES * 100);
-
+        // 更新存储概览（OSS 不限容量，只展示实际用量）
         $('storage-used').textContent = formatFileSize(totalSize);
-        $('storage-remaining').textContent = formatFileSize(Math.max(0, remaining));
         $('storage-count').textContent = totalCount + ' 个';
-        $('storage-bar-fill').style.width = Math.min(100, percent) + '%';
-        $('storage-bar-text').textContent = percent.toFixed(1) + '%';
-
-        var barFill = $('storage-bar-fill');
-        barFill.classList.remove('warning', 'danger');
-        if (percent > 80) barFill.classList.add('danger');
-        else if (percent > 60) barFill.classList.add('warning');
 
         // 渲染文件列表（用 OSS 真实数据）
         renderFileListFromOSS(folderResults);
@@ -2250,9 +2236,7 @@ async function showFileManager() {
     } catch (e) {
         container.innerHTML = '<div class="file-empty">加载失败：' + escapeHtml(e.message || '未知错误') + '</div>';
         $('storage-used').textContent = '加载失败';
-        $('storage-remaining').textContent = '-';
         $('storage-count').textContent = '-';
-        $('storage-bar-text').textContent = '-';
     }
 }
 
