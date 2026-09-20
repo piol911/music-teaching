@@ -1,0 +1,2985 @@
+/* ============================================================
+   Canvas · 无边画布  (苹果「无边记」风格无限画布)
+   - 无限画布引擎：相机 {x,y,scale} + 双层 transform
+   - 元素：便签 / 文本 / 图片 / B站视频 / 画笔
+   - 苹果式场景切换：相机飞行 + 景深聚焦 + 弹性入出场
+   ============================================================ */
+'use strict';
+
+/* ---------------- 基础工具 ---------------- */
+const $ = s => document.querySelector(s);
+const clamp = (v, a, b) => v < a ? a : (v > b ? b : v);
+const lerp = (a, b, t) => a + (b - a) * t;
+const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-3);
+
+function makeBezier(x1, y1, x2, y2) {
+  const cx = 3 * x1, bx = 3 * (x2 - x1) - cx, ax = 1 - cx - bx;
+  const cy = 3 * y1, by = 3 * (y2 - y1) - cy, ay = 1 - cy - by;
+  const fx = t => ((ax * t + bx) * t + cx) * t;
+  const dfx = t => (3 * ax * t + 2 * bx) * t + cx;
+  const fy = t => ((ay * t + by) * t + cy) * t;
+  return p => {
+    if (p <= 0) return 0;
+    if (p >= 1) return 1;
+    let t = p;
+    for (let i = 0; i < 8; i++) {
+      const x = fx(t) - p;
+      if (Math.abs(x) < 1e-5) break;
+      const d = dfx(t);
+      if (Math.abs(d) < 1e-6) break;
+      t -= x / d;
+    }
+    return fy(clamp(t, 0, 1));
+  };
+}
+const EASE_IOS = makeBezier(.32, .72, 0, 1);      // iOS 系统曲线
+const EASE_OUT = makeBezier(.22, .61, .36, 1);
+const EASE_IN = makeBezier(.4, 0, 1, 1);
+const CSS_IOS = 'cubic-bezier(.32,.72,0,1)';
+
+/* ---------------- DOM ---------------- */
+const stage = $('#stage'), viewport = $('#viewport'), world = $('#world');
+const grid = $('#grid'), marquee = $('#marquee'), guides = $('#guides');
+const topbar = $('.topbar'), toolbar = $('#toolbar');
+const boardsPanel = $('#boardsPanel'), boardList = $('#boardList');
+const minimap = $('#minimap'), miniCanvas = $('#miniCanvas'), miniVp = $('#miniVp');
+const ctxbar = $('#ctxbar'), toast = $('#toast'), dropHint = $('#dropHint');
+const fileInput = $('#fileInput');
+const modalMask = $('#modalMask'), modalInput = $('#modalInput'), modalErr = $('#modalErr');
+const helpMask = $('#helpMask');
+
+const MIN_SCALE = 0.08, MAX_SCALE = 5;
+
+/* ---------------- 状态 ---------------- */
+const STORE = 'canvas.freeform.v1';
+
+const state = {
+  boards: [],
+  activeId: null,
+  camera: { x: 0, y: 0, scale: 1 },
+  tool: 'select',
+  selection: new Set(),
+  editingId: null,
+  focusId: null,
+  camBeforeFocus: null,
+  immersive: false,
+  quality: 'auto',        // auto | high | low —— 低画质会砍掉模糊/毛玻璃/部分动效
+  presenting: false,
+  presentIdx: 0,
+};
+
+const domMap = new Map();          // id -> DOM
+let pendingTick = false;
+let camAnim = null;                // 相机飞行动画
+let boardAnimating = false;
+
+const board = () => state.boards.find(b => b.id === state.activeId) || state.boards[0];
+const els = () => board().elements;
+const findEl = id => els().find(e => e.id === id);
+
+/* ---------------- 持久化 ---------------- */
+let saveTimer = null, saveStateEl = $('#saveState');
+
+function markDirty() {
+  saveStateEl.textContent = '保存中…';
+  saveStateEl.classList.add('saving');
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(save, 500);
+}
+
+function save() {
+  const active = board();
+  if (active) { active.camera = { ...state.camera }; }
+  const payload = { v: 1, activeId: state.activeId, boards: state.boards };
+  let str;
+  try { str = JSON.stringify(payload); } catch (e) { return; }
+  try {
+    localStorage.setItem(STORE, str);
+    saveStateEl.textContent = '已保存';
+  } catch (e) {
+    // 超出配额：从最大的图片开始逐张剔除，能留几张留几张
+    let dropped = 0, ok = false;
+    try {
+      const slim = JSON.parse(str);
+      for (let round = 0; round < 200; round++) {
+        const imgs = [];
+        slim.boards.forEach(b => b.elements.forEach(el => { if (el.type === 'image' && el.src) imgs.push(el); }));
+        if (!imgs.length) break;
+        imgs.sort((a, b) => b.src.length - a.src.length);
+        imgs[0].src = '';
+        dropped++;
+        try {
+          localStorage.setItem(STORE, JSON.stringify(slim));
+          ok = true;
+          break;
+        } catch (e3) { /* 还超，继续剔 */ }
+      }
+    } catch (e4) { /* 解析失败，放弃 */ }
+    if (ok) {
+      saveStateEl.textContent = '已保存';
+    } else {
+      saveStateEl.textContent = '存储已满';
+    }
+  }
+  saveStateEl.classList.remove('saving');
+  scheduleCloudPush();               // 本地一改，几秒后推到云端
+}
+
+function load() {
+  let data = null;
+  try { data = JSON.parse(localStorage.getItem(STORE) || 'null'); } catch (e) { data = null; }
+  if (data && Array.isArray(data.boards) && data.boards.length) {
+    state.boards = data.boards;
+    state.activeId = data.activeId && data.boards.some(b => b.id === data.activeId) ? data.activeId : data.boards[0].id;
+    state.fresh = false;
+  } else {
+    state.boards = [seedBoard()];
+    state.activeId = state.boards[0].id;
+    state.fresh = true;
+  }
+  const c = board().camera || { x: 0, y: 0, scale: 1 };
+  state.camera = { x: c.x, y: c.y, scale: clamp(c.scale || 1, MIN_SCALE, MAX_SCALE) };
+}
+
+function newBoard(name) {
+  return { id: uid(), name: name || '未命名场景', camera: { x: 0, y: 0, scale: 1 }, elements: [] };
+}
+
+function seedBoard() {
+  const b = newBoard('欢迎');
+  const cx = 0, cy = 0;
+  const title = { id: uid(), type: 'text', x: cx - 260, y: cy - 300, w: 520, h: 74, text: '无边画布' };
+  b.elements.push(title);
+  const notes = [
+    ['拖动空白处平移\n按住空格也可以', 'c-yellow', -300, -180],
+    ['滚轮缩放\n⌘ + 滚轮 更精细', 'c-blue', -60, -180],
+    ['双击元素聚焦\n双击空白退出', 'c-pink', 180, -180],
+  ];
+  notes.forEach(([text, color, x, y]) => {
+    b.elements.push({ id: uid(), type: 'note', x, y, w: 210, h: 180, text, color });
+  });
+  b.elements.push({
+    id: uid(), type: 'note', x: -300, y: 50, w: 210, h: 150,
+    text: '拖便签边缘的圆点\n可以拉出连接线',
+    color: 'c-green',
+  });
+  b.elements.push({
+    id: uid(), type: 'note', x: -40, y: 50, w: 210, h: 150,
+    text: '⌘⇧R 记录视图\n⌘⇧P 开始演示',
+    color: 'c-purple',
+  });
+  const vid = {
+    id: uid(), type: 'video', x: 200, y: 50, w: 480, h: 306, bvid: 'BV1GJ411x7h7', title: '',
+  };
+  b.elements.push(vid);
+  b.elements.push({ id: uid(), type: 'note', x: -560, y: -180, w: 210, h: 150, text: '点底部 ▶ 图标\n粘贴 B 站链接', color: 'c-gray' });
+  // 示例连线
+  b.elements.push({
+    id: uid(), type: 'link', from: title.id, to: b.elements[1].id,
+    fromSide: 'auto', toSide: 'auto', arrow: 'end', curve: 'curve', x: 0, y: 0, w: 2, h: 2,
+  });
+  return b;
+}
+
+/* ---------------- 历史 ---------------- */
+let undoStack = [], redoStack = [], lastSnapshot = null;
+
+function snapshot() {
+  return JSON.stringify({ boards: state.boards, activeId: state.activeId });
+}
+function pushHistory() {
+  const snap = snapshot();
+  if (snap === lastSnapshot) return;
+  undoStack.push(snap);
+  if (undoStack.length > 60) undoStack.shift();
+  redoStack.length = 0;
+  lastSnapshot = snap;
+}
+function restore(snap) {
+  const d = JSON.parse(snap);
+  state.boards = d.boards;
+  state.activeId = d.activeId;
+  lastSnapshot = snap;
+  state.selection.clear();
+  state.editingId = null;
+  exitFocus(true);
+  renderBoard();
+  boardNameEl.value = board().name;
+  const c = board().camera || { x: 0, y: 0, scale: 1 };
+  flyTo(c.x, c.y, c.scale, 420);
+  markDirty();
+}
+function undo() {
+  if (!undoStack.length) return showToast('没有更多可撤销');
+  const cur = snapshot();
+  redoStack.push(cur);
+  restore(undoStack.pop());
+}
+function redo() {
+  if (!redoStack.length) return showToast('没有可重做');
+  undoStack.push(snapshot());
+  restore(redoStack.pop());
+}
+lastSnapshot = null;
+
+/* ---------------- 相机 ---------------- */
+const GRID_PAD = 200;
+let lastZoomTxt = '', lastStep = -1, lastCullAt = 0, culledAny = false;
+
+function applyCamera() {
+  const { x, y, scale } = state.camera;
+  world.style.transform = `translate3d(${-x * scale}px, ${-y * scale}px, 0) scale(${scale})`;
+
+  // 网格：只在步长档位变化时改 background-size，其余走 transform（纯合成，不触发重绘）
+  let step = 26 * scale;
+  while (step < 15) step *= 2;
+  while (step > 110) step /= 2;
+  if (Math.abs(step - lastStep) > 0.01) {
+    grid.style.backgroundSize = `${step}px ${step}px`;
+    lastStep = step;
+  }
+  const gx = ((-x * scale + GRID_PAD) % step + step) % step;
+  const gy = ((-y * scale + GRID_PAD) % step + step) % step;
+  grid.style.transform = `translate3d(${gx.toFixed(2)}px, ${gy.toFixed(2)}px, 0)`;
+
+  const zt = Math.round(scale * 100) + '%';
+  if (zt !== lastZoomTxt) { $('#zoomVal').textContent = zt; lastZoomTxt = zt; }
+
+  updateCtxbar();
+  drawMinimap();
+
+  // 剔除：节流到 ~8Hz，避免每帧遍历全部元素
+  const now = performance.now();
+  if (now - lastCullAt > 120) {
+    lastCullAt = now;
+    if (els().length > 40) cull();
+    else if (culledAny) {
+      for (const dom of domMap.values()) dom.classList.remove('culled');
+      culledAny = false;
+    }
+  }
+}
+
+function tick() {
+  pendingTick = false;
+  applyCamera();
+}
+function requestTick() {
+  if (!pendingTick) { pendingTick = true; requestAnimationFrame(tick); }
+}
+
+function screenToWorld(sx, sy) {
+  const s = state.camera.scale;
+  return { x: sx / s + state.camera.x, y: sy / s + state.camera.y };
+}
+function worldToScreen(wx, wy) {
+  const s = state.camera.scale;
+  return { x: (wx - state.camera.x) * s, y: (wy - state.camera.y) * s };
+}
+
+/* 相机飞行：缩放走对数插值，位置按 1/s 权重插值（目标不会飞出视野） */
+function flyTo(tx, ty, tscale, dur = 620, ease = EASE_IOS) {
+  cancelCamAnim();
+  const s0 = { ...state.camera };
+  const t1 = clamp(tscale, MIN_SCALE, MAX_SCALE);
+  if (dur <= 0) {
+    state.camera.x = tx; state.camera.y = ty; state.camera.scale = t1;
+    applyCamera();
+    return;
+  }
+  if (Math.abs(s0.x - tx) < .5 && Math.abs(s0.y - ty) < .5 && Math.abs(s0.scale - t1) < .001) return;
+  setFlying(true);
+  let elapsed = 0, last = performance.now();
+  const ls0 = Math.log(s0.scale), ls1 = Math.log(t1);
+  const inv0 = 1 / s0.scale, inv1 = 1 / t1;
+  const step = now => {
+    let dt = now - last; last = now;
+    if (dt > 90) dt = 90;               // 掉帧 / 从后台切回来时不瞬移
+    elapsed += dt;
+    const p = clamp(elapsed / dur, 0, 1);
+    const e = ease(p);
+    const sc = Math.exp(lerp(ls0, ls1, e));
+    let pe;
+    if (Math.abs(inv0 - inv1) < 1e-6) pe = e;
+    else pe = clamp((inv0 - 1 / sc) / (inv0 - inv1), 0, 1);
+    state.camera.scale = sc;
+    state.camera.x = lerp(s0.x, tx, pe);
+    state.camera.y = lerp(s0.y, ty, pe);
+    applyCamera();
+    if (p < 1) camAnim = requestAnimationFrame(step);
+    else { camAnim = null; setFlying(false); markDirty(); }
+  };
+  camAnim = requestAnimationFrame(step);
+}
+/* 视图跳转：距离远 / 缩放跨度大时走「拉远—推进」的弧形轨迹（Prezi 式） */
+function flyToArc(tx, ty, tscale, dur = 1050) {
+  cancelCamAnim();
+  const s0 = { ...state.camera };
+  const t1 = clamp(tscale, MIN_SCALE, MAX_SCALE);
+  if (dur <= 0) { state.camera.x = tx; state.camera.y = ty; state.camera.scale = t1; applyCamera(); return; }
+  setFlying(true);
+  let elapsed = 0, last = performance.now();
+  const ls0 = Math.log(s0.scale), ls1 = Math.log(t1);
+  const inv0 = 1 / s0.scale, inv1 = 1 / t1;
+  const dip = 0.24;                    // 中途最多收缩到 76%（再大就顿挫）
+  const step = now => {
+    let dt = now - last; last = now;
+    if (dt > 90) dt = 90;               // 同上，防跳变
+    elapsed += dt;
+    const p = clamp(elapsed / dur, 0, 1);
+    const e = EASE_IOS(p);
+    const sc = Math.exp(lerp(ls0, ls1, e)) * (1 - dip * Math.sin(Math.PI * e));
+    // 位置单独按 e 走：不再跟缩放挂钩，否则 dip 会让画面先卡住再突然窜出去
+    state.camera.scale = clamp(sc, MIN_SCALE, MAX_SCALE);
+    state.camera.x = lerp(s0.x, tx, e);
+    state.camera.y = lerp(s0.y, ty, e);
+    applyCamera();
+    if (p < 1) camAnim = requestAnimationFrame(step);
+    else { camAnim = null; setFlying(false); markDirty(); }
+  };
+  camAnim = requestAnimationFrame(step);
+}
+
+/* 动效时长（低画质档缩短） */
+function dur(ms) { return state.quality === 'low' ? Math.round(ms * 0.55) : ms; }
+
+function setFlying(on) { document.body.classList.toggle('flying', on); }
+
+function cancelCamAnim() {
+  if (camAnim) { cancelAnimationFrame(camAnim); camAnim = null; }
+  setFlying(false);
+}
+
+function bboxOf(list) {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  list.forEach(e => {
+    x0 = Math.min(x0, e.x); y0 = Math.min(y0, e.y);
+    x1 = Math.max(x1, e.x + e.w); y1 = Math.max(y1, e.y + e.h);
+  });
+  if (x0 === Infinity) return null;
+  return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+}
+
+/* 相机 (x,y) 表示「视口左上角」对应的世界点；要让某个世界点落在屏幕中心，得减去半个视口 */
+function centerCam(wx, wy, scale) {
+  return { x: wx - innerWidth / (2 * scale), y: wy - innerHeight / (2 * scale) };
+}
+
+function fitAll(durMs = 700) {
+  const b = bboxOf(els());
+  const vw = innerWidth, vh = innerHeight;
+  if (!b) return flyTo(0, 0, 1, dur(durMs));
+  const pad = 160;
+  const sc = clamp(Math.min((vw - pad) / Math.max(b.w, 1), (vh - pad) / Math.max(b.h, 1)), MIN_SCALE, 1.6);
+  const c = centerCam(b.x + b.w / 2, b.y + b.h / 2, sc);
+  flyTo(c.x, c.y, sc, dur(durMs));
+}
+
+function zoomBy(factor, sx, sy) {
+  const s0 = state.camera.scale;
+  const s1 = clamp(s0 * factor, MIN_SCALE, MAX_SCALE);
+  if (Math.abs(s1 - s0) < 1e-6) return;
+  cancelCamAnim();
+  const cx = sx === undefined ? innerWidth / 2 : sx;
+  const cy = sy === undefined ? innerHeight / 2 : sy;
+  state.camera.x += cx / s0 - cx / s1;
+  state.camera.y += cy / s0 - cy / s1;
+  state.camera.scale = s1;
+  requestTick();
+  markDirty();
+}
+
+/* ---------------- 视口剔除 ---------------- */
+function cull() {
+  const s = state.camera.scale;
+  const wx0 = state.camera.x, wy0 = state.camera.y;
+  const wx1 = wx0 + innerWidth / s, wy1 = wy0 + innerHeight / s;
+  const pad = 500 / s;
+  for (const e of els()) {
+    const dom = domMap.get(e.id);
+    if (!dom) continue;
+      const vis = !(e.x + e.w < wx0 - pad || e.x > wx1 + pad || e.y + e.h < wy0 - pad || e.y > wy1 + pad);
+      if (dom.classList.contains('culled') === !vis) continue;
+      dom.classList.toggle('culled', !vis);
+      culledAny = true;
+    }
+}
+
+/* ---------------- 元素渲染 ---------------- */
+const NOTE_COLORS = ['c-yellow', 'c-pink', 'c-blue', 'c-green', 'c-purple', 'c-gray'];
+
+function elClass(d) {
+  return `el el-${d.type}${d.type === 'note' ? ' ' + (d.color || 'c-yellow') : ''}`;
+}
+const DEF_FONT = { note: 17, text: 28 };
+function fontSizeOf(d) { return d.fontSize || DEF_FONT[d.type] || 17; }
+
+function setBox(dom, d) {
+  dom.style.width = d.w + 'px';
+  dom.style.height = d.h + 'px';
+  dom.style.setProperty('--tx', d.x + 'px');
+  dom.style.setProperty('--ty', d.y + 'px');
+  dom.style.transform = `translate3d(${d.x}px, ${d.y}px, 0)`;
+}
+
+function buildEl(d) {
+  const dom = document.createElement('div');
+  dom.className = elClass(d);
+  dom.dataset.id = d.id;
+  setBox(dom, d);
+
+  const body = document.createElement('div');
+  body.className = 'el-body';
+  dom.appendChild(body);
+
+  if (d.type === 'note' || d.type === 'text') {
+    const t = document.createElement('div');
+    t.className = 'txt';
+    t.style.fontSize = fontSizeOf(d) + 'px';
+    t.textContent = d.text || '';
+    body.appendChild(t);
+  } else if (d.type === 'image') {
+    const img = document.createElement('img');
+    img.src = d.src || '';
+    img.draggable = false;
+    // 存在云上的图：万一 CDN 域名不可达，回落到云函数代读（同一份图，两条路）
+    img.onerror = () => {
+      if (!d.imgId || img.dataset.retried) return;
+      img.dataset.retried = '1';
+      img.src = CLOUD_API + '?img=' + encodeURIComponent(d.imgId);
+    };
+    body.appendChild(img);
+  } else if (d.type === 'video') {
+    dom.classList.add('paused');
+    const bar = document.createElement('div');
+    bar.className = 'v-bar';
+    bar.innerHTML = `<span class="dot"></span><span class="t">${escapeHtml(d.title || ('B站 · ' + (d.bvid || ('av' + d.aid))))}</span>`;
+    const stub = document.createElement('div');
+    stub.className = 'v-stub';
+    stub.innerHTML = `<svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.8)" stroke-width="1.6"><rect x="2.5" y="5" width="19" height="14" rx="3.5"/><path d="M10.5 9.5l5 2.5-5 2.5z" fill="rgba(255,255,255,.8)" stroke="none"/></svg><span>点击载入播放器</span>`;
+    const play = document.createElement('div');
+    play.className = 'v-play';
+    play.innerHTML = `<svg width="22" height="22" viewBox="0 0 24 24" fill="#fff"><path d="M8 5.5v13l11-6.5z"/></svg>`;
+    body.appendChild(bar);
+    body.appendChild(stub);
+    body.appendChild(play);
+  } else if (d.type === 'ink') {
+    body.appendChild(inkSvg(d));
+  } else if (d.type === 'link') {
+    const g = computeLink(d);
+    if (g) { d.x = g.x; d.y = g.y; d.w = g.w; d.h = g.h; setBox(dom, d); }
+    body.appendChild(linkSvg(d, g));
+  }
+
+  if (d.type === 'link') {
+    dom.style.zIndex = -1;
+    return dom;
+  }
+
+  ['nw', 'ne', 'sw', 'se'].forEach(k => {
+    const h = document.createElement('div');
+    h.className = 'handle h-' + k;
+    h.dataset.h = k;
+    dom.appendChild(h);
+  });
+  ['top', 'right', 'bottom', 'left'].forEach(s => {
+    const a = document.createElement('div');
+    a.className = 'anchor a-' + s;
+    a.dataset.a = s;
+    a.title = '拖出连接线';
+    dom.appendChild(a);
+  });
+
+  if (d.z) dom.style.zIndex = d.z;
+  return dom;
+}
+
+function inkSvg(d) {
+  const pts = d.points || [];
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('width', d.w);
+  svg.setAttribute('height', d.h);
+  svg.setAttribute('viewBox', `0 0 ${d.w} ${d.h}`);
+  const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  path.setAttribute('d', ptsToPath(pts));
+  svg.appendChild(path);
+  return svg;
+}
+function ptsToPath(pts) {
+  if (!pts.length) return '';
+  let minX = Infinity, minY = Infinity;
+  for (const p of pts) { minX = Math.min(minX, p[0]); minY = Math.min(minY, p[1]); }
+  // 相对 bbox 原点（含 padding）
+  let d = '';
+  for (let i = 0; i < pts.length; i++) {
+    const x = pts[i][0] - minX, y = pts[i][1] - minY;
+    d += (i === 0 ? 'M' : 'L') + x.toFixed(1) + ' ' + y.toFixed(1) + ' ';
+  }
+  return d.trim();
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function refreshEl(d) {
+  const dom = domMap.get(d.id);
+  if (!dom) return;
+  if (d.type === 'link') { refreshLink(d); return; }
+  setBox(dom, d);
+  dom.className = elClass(d) + (dom.classList.contains('sel') ? ' sel' : '') + (dom.classList.contains('editable') ? ' editable' : '');
+  const body = dom.querySelector('.el-body');
+  if (d.type === 'note' || d.type === 'text') {
+    const t = dom.querySelector('.txt');
+    if (t) {
+      if (t.textContent !== (d.text || '')) t.textContent = d.text || '';
+      t.style.fontSize = fontSizeOf(d) + 'px';
+    }
+  } else if (d.type === 'image') {
+    const img = dom.querySelector('img');
+    if (img && img.getAttribute('src') !== (d.src || '')) img.src = d.src || '';
+  } else if (d.type === 'ink') {
+    const old = body.querySelector('svg');
+    const nw = inkSvg(d);
+    if (old) body.replaceChild(nw, old); else body.appendChild(nw);
+  } else if (d.type === 'video') {
+    const bar = dom.querySelector('.v-bar .t');
+    if (bar) bar.textContent = d.title || ('B站 · ' + (d.bvid || ('av' + d.aid)));
+    updateVideoScale(dom, d);
+  }
+}
+
+/* ---------------- 连接线（思维导图） ---------------- */
+const NS = 'http://www.w3.org/2000/svg';
+function svgNode(tag, attrs) {
+  const n = document.createElementNS(NS, tag);
+  for (const k in attrs) n.setAttribute(k, attrs[k]);
+  return n;
+}
+function edgePoint(r, side) {
+  switch (side) {
+    case 'top': return { x: r.x + r.w / 2, y: r.y, nx: 0, ny: -1 };
+    case 'bottom': return { x: r.x + r.w / 2, y: r.y + r.h, nx: 0, ny: 1 };
+    case 'left': return { x: r.x, y: r.y + r.h / 2, nx: -1, ny: 0 };
+    default: return { x: r.x + r.w, y: r.y + r.h / 2, nx: 1, ny: 0 };
+  }
+}
+function autoSides(ra, rb) {
+  const dx = (rb.x + rb.w / 2) - (ra.x + ra.w / 2);
+  const dy = (rb.y + rb.h / 2) - (ra.y + ra.h / 2);
+  if (Math.abs(dx) >= Math.abs(dy)) return dx >= 0 ? ['right', 'left'] : ['left', 'right'];
+  return dy >= 0 ? ['bottom', 'top'] : ['top', 'bottom'];
+}
+function computeGeom(p1, p2, curve) {
+  const pad = 52;
+  const bx = Math.min(p1.x, p2.x) - pad, by = Math.min(p1.y, p2.y) - pad;
+  const bw = Math.max(2, Math.abs(p1.x - p2.x) + pad * 2);
+  const bh = Math.max(2, Math.abs(p1.y - p2.y) + pad * 2);
+  const a = { x: p1.x - bx, y: p1.y - by }, b = { x: p2.x - bx, y: p2.y - by };
+  let d;
+  if (curve === 'line') {
+    d = `M ${a.x.toFixed(1)} ${a.y.toFixed(1)} L ${b.x.toFixed(1)} ${b.y.toFixed(1)}`;
+  } else {
+    const k = clamp(Math.hypot(b.x - a.x, b.y - a.y) * 0.42, 32, 170);
+    d = `M ${a.x.toFixed(1)} ${a.y.toFixed(1)} C ${(a.x + p1.nx * k).toFixed(1)} ${(a.y + p1.ny * k).toFixed(1)} ` +
+        `${(b.x + p2.nx * k).toFixed(1)} ${(b.y + p2.ny * k).toFixed(1)} ${b.x.toFixed(1)} ${b.y.toFixed(1)}`;
+  }
+  return { x: bx, y: by, w: bw, h: bh, path: d };
+}
+function computeLink(d) {
+  const a = findEl(d.from), b = findEl(d.to);
+  if (!a || !b || a === b) return null;
+  const ra = { x: a.x, y: a.y, w: a.w, h: a.h }, rb = { x: b.x, y: b.y, w: b.w, h: b.h };
+  let sa = d.fromSide, sb = d.toSide;
+  if (!sa || sa === 'auto' || !sb || sb === 'auto') {
+    const pair = autoSides(ra, rb);
+    if (!sa || sa === 'auto') sa = pair[0];
+    if (!sb || sb === 'auto') sb = pair[1];
+  }
+  return computeGeom(edgePoint(ra, sa), edgePoint(rb, sb), d.curve || 'curve');
+}
+function previewGeom(srcId, side, pt) {
+  const a = findEl(srcId);
+  if (!a) return null;
+  const ra = { x: a.x, y: a.y, w: a.w, h: a.h };
+  const p1 = edgePoint(ra, side === 'auto' ? 'right' : side);
+  const p2 = { x: pt.x, y: pt.y, nx: -p1.nx, ny: -p1.ny };
+  return computeGeom(p1, p2, 'curve');
+}
+function linkSvg(d, g) {
+  const svg = svgNode('svg', { width: d.w, height: d.h, viewBox: `0 0 ${d.w} ${d.h}` });
+  const arrow = d.arrow || 'end';
+  if (arrow !== 'none') {
+    const defs = svgNode('defs', {});
+    const m = svgNode('marker', {
+      id: 'mk-' + d.id, viewBox: '0 0 10 10', refX: '9', refY: '5',
+      markerWidth: '13', markerHeight: '13', markerUnits: 'userSpaceOnUse', orient: 'auto-start-reverse',
+    });
+    m.appendChild(svgNode('path', { d: 'M0 0.6 L10 5 L0 9.4 z' }));
+    defs.appendChild(m);
+    svg.appendChild(defs);
+  }
+  const dstr = g ? g.path : '';
+  svg.appendChild(svgNode('path', { class: 'lk-hit', d: dstr }));
+  const attrs = { class: 'lk-path', d: dstr };
+  if (arrow === 'end' || arrow === 'both') attrs['marker-end'] = `url(#mk-${d.id})`;
+  if (arrow === 'both') attrs['marker-start'] = `url(#mk-${d.id})`;
+  svg.appendChild(svgNode('path', attrs));
+  return svg;
+}
+function buildLink(d) {
+  const dom = document.createElement('div');
+  dom.className = 'el el-link';
+  dom.dataset.id = d.id;
+  const g = computeLink(d);
+  if (g) { d.x = g.x; d.y = g.y; d.w = g.w; d.h = g.h; }
+  setBox(dom, d);
+  const body = document.createElement('div');
+  body.className = 'el-body';
+  body.appendChild(linkSvg(d, g));
+  dom.appendChild(body);
+  return dom;
+}
+function refreshLink(d) {
+  const dom = domMap.get(d.id);
+  if (!dom) return;
+  const g = computeLink(d);
+  if (!g) return;
+  d.x = g.x; d.y = g.y; d.w = g.w; d.h = g.h;
+  setBox(dom, d);
+  const svg = dom.querySelector('svg');
+  if (!svg) return;
+  svg.setAttribute('width', d.w);
+  svg.setAttribute('height', d.h);
+  svg.setAttribute('viewBox', `0 0 ${d.w} ${d.h}`);
+  svg.querySelectorAll('path.lk-hit, path.lk-path').forEach(p => p.setAttribute('d', g.path));
+}
+
+/* 从锚点 / 连线工具拖出一条新连接线 */
+function startLinkDrag(e, srcId, side) {
+  const tmp = { id: 'pv', type: 'link', from: srcId, to: srcId, fromSide: side || 'auto', toSide: 'auto', arrow: 'end', curve: 'curve', x: 0, y: 0, w: 2, h: 2 };
+  const dom = document.createElement('div');
+  dom.className = 'el el-link preview';
+  dom.style.zIndex = -1;
+  const body = document.createElement('div');
+  body.className = 'el-body';
+  dom.appendChild(body);
+  world.appendChild(dom);
+
+  let targetId = null, hoverId = null;
+  const upd = ev => {
+    const pt = screenToWorld(ev.clientX, ev.clientY);
+    const g = previewGeom(srcId, side, pt);
+    if (!g) return;
+    tmp.x = g.x; tmp.y = g.y; tmp.w = g.w; tmp.h = g.h;
+    setBox(dom, tmp);
+    const svg = linkSvg({ id: 'pv', w: tmp.w, h: tmp.h, arrow: 'end' }, g);
+    const old = body.querySelector('svg');
+    if (old) body.replaceChild(svg, old); else body.appendChild(svg);
+
+    const hitEl = document.elementFromPoint(ev.clientX, ev.clientY);
+    const host = hitEl && hitEl.closest ? hitEl.closest('.el') : null;
+    const id = host && !host.classList.contains('el-link') ? host.dataset.id : null;
+    if (id !== hoverId) {
+      if (hoverId) { const od = domMap.get(hoverId); if (od) od.classList.remove('link-target'); }
+      if (id && id !== srcId) { const nd = domMap.get(id); if (nd) nd.classList.add('link-target'); }
+      hoverId = id;
+    }
+    targetId = (id && id !== srcId) ? id : null;
+  };
+  drag = {
+    mode: 'link', moved: true,
+    move: upd,
+    end() {
+      dom.remove();
+      if (hoverId) { const od = domMap.get(hoverId); if (od) od.classList.remove('link-target'); }
+      if (targetId) {
+        const d = createLink(srcId, targetId, side);
+        select([d.id]);
+      }
+    }
+  };
+  bindDrag(e);
+  upd(e);
+}
+
+function createLink(from, to, side, opts = {}) {
+  const d = {
+    id: uid(), type: 'link', from, to,
+    fromSide: side || 'auto', toSide: 'auto', arrow: 'end', curve: 'curve',
+    x: 0, y: 0, w: 2, h: 2,
+  };
+  const g = computeLink(d);
+  if (g) { d.x = g.x; d.y = g.y; d.w = g.w; d.h = g.h; }
+  addEl(d, { silent: true, noHistory: opts.noHistory });
+  return d;
+}
+
+/* ---------------- 思维导图：子节点 + 自动对齐 ---------------- */
+function childLinksOf(pid) {
+  return els().filter(e => e.type === 'link' && e.from === pid);
+}
+function parentOf(id) {
+  const l = els().find(e => e.type === 'link' && e.to === id);
+  return l ? l.from : null;
+}
+
+/* 把一个节点的子节点重新排成右边一列，整列相对父节点垂直居中 */
+function layoutChildren(pid) {
+  const p = findEl(pid);
+  if (!p) return;
+  const kids = childLinksOf(pid).map(l => findEl(l.to)).filter(Boolean);
+  if (!kids.length) return;
+  const gapX = 140, gapY = 40;
+  const totalH = kids.reduce((a, k) => a + k.h, 0) + gapY * (kids.length - 1);
+  const x = Math.round(p.x + p.w + gapX);
+  let y = p.y + (p.h - totalH) / 2;
+  kids.forEach(k => {
+    k.x = x;
+    k.y = Math.round(y);
+    y += k.h + gapY;
+    const dom = domMap.get(k.id);
+    if (dom) setBox(dom, k);
+    updateLinksFor([k.id]);
+  });
+  drawMinimap();
+  markDirty();
+}
+
+/* Tab 加子节点、Enter 加同级 —— 像思维导图那样一路敲下去 */
+function addMindNode(id, mode) {
+  const cur = findEl(id);
+  if (!cur) return;
+  let parent = cur;
+  if (mode === 'sibling') {
+    const pid = parentOf(id);
+    if (pid) parent = findEl(pid) || cur;
+  }
+  pushHistory();
+  const w = clamp(Math.round(cur.w), 150, 240);
+  const h = 92;
+  const node = {
+    id: uid(), type: 'note',
+    x: Math.round(parent.x + parent.w + 140),
+    y: Math.round(parent.y + parent.h + 40),
+    w, h, text: '',
+    color: cur.type === 'note' ? (cur.color || 'c-yellow') : 'c-yellow',
+  };
+  addEl(node, { silent: true, noHistory: true });
+  createLink(parent.id, node.id, 'right', { noHistory: true });
+  layoutChildren(parent.id);
+  select([node.id]);
+  enterEdit(node.id);
+}
+
+/* ---------------- 对齐参考线 ---------------- */
+function unionBox(items) {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  items.forEach(o => {
+    const d = o.d || o;
+    x0 = Math.min(x0, d.x); y0 = Math.min(y0, d.y);
+    x1 = Math.max(x1, d.x + d.w); y1 = Math.max(y1, d.y + d.h);
+  });
+  return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+}
+
+/* 找出与被拖内容最接近的对齐位置（左/中/右、上/中/下），返回吸附偏移 */
+function snapFor(box, exclude) {
+  const T = 6 / state.camera.scale;         // 6px 屏幕距离内才吸附
+  const ex = [box.x, box.x + box.w / 2, box.x + box.w];
+  const ey = [box.y, box.y + box.h / 2, box.y + box.h];
+  let dx = 0, dy = 0, vx = null, hy = null, bx = T, by = T;
+  for (const o of els()) {
+    if (o.type === 'link' || exclude.has(o.id)) continue;
+    const ox = [o.x, o.x + o.w / 2, o.x + o.w];
+    const oy = [o.y, o.y + o.h / 2, o.y + o.h];
+    for (const a of ox) for (const b of ex) {
+      const d = a - b;
+      if (Math.abs(d) < bx) { bx = Math.abs(d); dx = d; vx = a; }
+    }
+    for (const a of oy) for (const b of ey) {
+      const d = a - b;
+      if (Math.abs(d) < by) { by = Math.abs(d); dy = d; hy = a; }
+    }
+  }
+  return { dx, dy, vx, hy };
+}
+
+function showGuides(vx, hy) {
+  const g = $('#guides');
+  if (!g) return;
+  if (vx === null && hy === null) { g.classList.remove('on'); return; }
+  g.classList.add('on');
+  const gv = $('#gv'), gh = $('#gh');
+  if (vx === null) gv.style.display = 'none';
+  else { gv.style.display = 'block'; gv.style.left = worldToScreen(vx, 0).x + 'px'; }
+  if (hy === null) gh.style.display = 'none';
+  else { gh.style.display = 'block'; gh.style.top = worldToScreen(0, hy).y + 'px'; }
+}
+function hideGuides() {
+  const g = $('#guides');
+  if (g) g.classList.remove('on');
+}
+function updateLinksFor(ids) {
+  const set = new Set(ids);
+  for (const d of els()) {
+    if (d.type === 'link' && (set.has(d.from) || set.has(d.to))) refreshLink(d);
+  }
+}
+function updateAllLinks() {
+  for (const d of els()) if (d.type === 'link') refreshLink(d);
+}
+
+function renderBoard() {
+  world.innerHTML = '';
+  domMap.clear();
+  for (const d of els()) {
+    const dom = buildEl(d);
+    world.appendChild(dom);
+    domMap.set(d.id, dom);
+  }
+  updateBoardMeta();
+  renderBoardList();
+  renderViews();
+  drawMinimap();
+}
+
+/* ---------------- 增删元素 ---------------- */
+function addEl(d, opts = {}) {
+  if (!opts.noHistory) pushHistory();
+  els().push(d);
+  const dom = buildEl(d);
+  world.appendChild(dom);
+  domMap.set(d.id, dom);
+  if (!opts.silent) {
+    dom.classList.add('appear');
+    setTimeout(() => dom.classList.remove('appear'), 480);
+  }
+  updateBoardMeta();
+  drawMinimap();
+  markDirty();
+  return d;
+}
+
+function removeEls(ids) {
+  if (!ids.length) return;
+  pushHistory();
+  const set = new Set(ids);
+  // 连带删除依附其上的连接线
+  const links = els().filter(e => e.type === 'link' && (set.has(e.from) || set.has(e.to))).map(e => e.id);
+  const all = [...new Set([...ids, ...links])];
+  all.forEach(id => {
+    const dom = domMap.get(id);
+    const i = els().findIndex(e => e.id === id);
+    if (i >= 0) els().splice(i, 1);
+    if (dom) {
+      domMap.delete(id);
+      dom.classList.add('leaving');
+      setTimeout(() => dom.remove(), 240);
+    }
+    state.selection.delete(id);
+    if (state.focusId === id) exitFocus(true);
+  });
+  updateCtxbar();
+  updateBoardMeta();
+  drawMinimap();
+  markDirty();
+}
+
+function bringToFront(ids) {
+  pushHistory();
+  const maxZ = els().reduce((m, e) => Math.max(m, e.z || 0), 0);
+  ids.forEach((id, i) => {
+    const e = findEl(id);
+    if (e) { e.z = maxZ + 1 + i; const dom = domMap.get(id); if (dom) dom.style.zIndex = e.z; }
+  });
+  markDirty();
+}
+
+/* ---------------- 选择 ---------------- */
+function select(ids, additive = false) {
+  if (!additive) {
+    state.selection.forEach(id => {
+      const dom = domMap.get(id);
+      if (dom) dom.classList.remove('sel', 'editable', 'anchors');
+    });
+    state.selection.clear();
+  }
+  const single = ids.length === 1 && (findEl(ids[0]) || {}).type !== 'link';
+  ids.forEach(id => {
+    state.selection.add(id);
+    const dom = domMap.get(id);
+    if (dom) {
+      dom.classList.add('sel', 'editable');
+      if (single) dom.classList.add('anchors');
+      else dom.classList.remove('anchors');
+    }
+  });
+  if (state.editingId && !state.selection.has(state.editingId)) exitEdit();
+  updateCtxbar();
+}
+function clearSelection() { select([]); }
+
+let ctxSig = '';
+function updateCtxbar() {
+  const ids = [...state.selection];
+  const list = ids.map(findEl).filter(Boolean);
+  if (!list.length || state.editingId) {
+    ctxbar.classList.remove('show');
+    ctxSig = '';
+    return;
+  }
+  // 内容只在「选中的东西变了」时重建 —— 这个函数每帧都会被调用，
+  // 每帧重设 innerHTML 会在相机飞行时白白吃掉十几帧
+  const sig = list.map(e => [e.id, e.type, e.arrow, e.curve, e.fontSize, e.color].join(':')).join('|');
+  if (sig !== ctxSig) {
+    ctxSig = sig;
+    ctxbar.innerHTML = ctxHtml(list);
+  }
+  ctxbar.classList.add('show');
+  const b = bboxOf(list);
+  const s = state.camera.scale;
+  const sx = (b.x + b.w / 2 - state.camera.x) * s;
+  const sy = (b.y + b.h - state.camera.y) * s + 16;
+  if (sx < -80 || sx > innerWidth + 80 || sy < 40 || sy > innerHeight - 20) {
+    ctxbar.classList.remove('show');
+    return;
+  }
+  // 夹在屏幕内，避免工具条被左右边缘裁掉
+  const half = (ctxbar.offsetWidth || 200) / 2;
+  ctxbar.style.left = clamp(sx, half + 10, Math.max(half + 10, innerWidth - half - 10)) + 'px';
+  ctxbar.style.top = clamp(sy, 70, innerHeight - 66) + 'px';
+  ctxbar.style.transform = 'translateX(-50%)';
+}
+
+const ICON = {
+  copy: '<svg viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12" rx="2.5"/><path d="M5 15V6a2 2 0 012-2h9"/></svg>',
+  trash: '<svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13"/></svg>',
+  front: '<svg viewBox="0 0 24 24"><path d="M12 3l8 5-8 5-8-5z"/><path d="M4 13l8 5 8-5"/></svg>',
+  back: '<svg viewBox="0 0 24 24"><path d="M12 21l-8-5 8-5 8 5z"/><path d="M4 11l8-5 8 5"/></svg>',
+  link: '<svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 007.5.5l3-3a5 5 0 00-7-7L11.5 5"/><path d="M14 11a5 5 0 00-7.5-.5l-3 3a5 5 0 007 7L12.5 19"/></svg>',
+  reload: '<svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 10-2.3 5.7"/><path d="M20 5v6h-6"/></svg>',
+  fit: '<svg viewBox="0 0 24 24"><path d="M4 9V5a1 1 0 011-1h4M20 9V5a1 1 0 00-1-1h-4M4 15v4a1 1 0 001 1h4M20 15v4a1 1 0 01-1 1h-4"/></svg>',
+  arrow: '<svg viewBox="0 0 24 24"><path d="M4 12h15"/><path d="M13 6l6 6-6 6"/></svg>',
+  arrow2: '<svg viewBox="0 0 24 24"><path d="M4 12h15"/><path d="M8 7l-4 5 4 5"/><path d="M20 7l-4 5 4 5"/></svg>',
+  line: '<svg viewBox="0 0 24 24"><path d="M4 18L20 6"/></svg>',
+  curve: '<svg viewBox="0 0 24 24"><path d="M4 18C10 18 14 6 20 6"/></svg>',
+  child: '<svg viewBox="0 0 24 24"><path d="M12 6v12M6 12h12"/></svg>',
+  sibling: '<svg viewBox="0 0 24 24"><path d="M5 4v16"/><path d="M5 12h6a3 3 0 003-3V6"/><path d="M5 12h6a3 3 0 013 3v4"/></svg>',
+};
+
+function ctxHtml(list) {
+  const one = list[0], all = list.length > 1;
+  let html = '';
+  if (!all && one.type === 'note') {
+    html += '<div style="display:flex;gap:5px;padding:0 4px">';
+    NOTE_COLORS.forEach(c => {
+      const on = (one.color || 'c-yellow') === c ? ' on' : '';
+      html += `<div class="sw ${c}${on}" data-act="color" data-v="${c}" style="background:${
+        { 'c-yellow': '#FFE066', 'c-pink': '#FFAFCC', 'c-blue': '#A9D6FF', 'c-green': '#A8E6B8', 'c-purple': '#CDB4FF', 'c-gray': '#DCDCE1' }[c]
+      }"></div>`;
+    });
+    html += '</div><div class="cdiv"></div>';
+  }
+  if (!all && (one.type === 'note' || one.type === 'text')) {
+    html += `<div class="cx fs" data-act="font" data-v="-2" title="缩小字号 (⌘-)">A−</div>` +
+            `<div class="fsv">${Math.round(fontSizeOf(one))}</div>` +
+            `<div class="cx fs" data-act="font" data-v="2" title="放大字号 (⌘+)">A+</div>`;
+    html += '<div class="cdiv"></div>';
+    html += `<div class="cx" data-act="child" title="添加子节点 (Tab)">${ICON.child}</div>`;
+    html += `<div class="cx" data-act="sibling" title="添加同级节点 (Enter)">${ICON.sibling}</div>`;
+    html += '<div class="cdiv"></div>';
+  }
+  if (!all && one.type === 'link') {
+    const ar = one.arrow || 'end';
+    html += `<div class="cx" data-act="arrow" title="箭头：${ar === 'none' ? '无' : ar === 'both' ? '双向' : '单向'}">${ar === 'both' ? ICON.arrow2 : ar === 'none' ? ICON.line : ICON.arrow}</div>`;
+    html += `<div class="cx" data-act="curve" title="${one.curve === 'line' ? '换成曲线' : '换成直线'}">${one.curve === 'line' ? ICON.curve : ICON.line}</div>`;
+    html += '<div class="cdiv"></div>';
+  }
+  if (!all && one.type === 'video') {
+    html += `<div class="cx" data-act="open" title="在 B 站打开">${ICON.link}</div>`;
+    html += `<div class="cx" data-act="reload" title="重新载入播放器">${ICON.reload}</div>`;
+    html += `<div class="cx" data-act="focus" title="聚焦">${ICON.fit}</div>`;
+    html += '<div class="cdiv"></div>';
+  }
+  if (!all && (one.type === 'image' || one.type === 'video')) {
+    html += `<div class="cx" data-act="focus" title="聚焦">${ICON.fit}</div>`;
+    html += '<div class="cdiv"></div>';
+  }
+  html += `<div class="cx" data-act="front" title="置顶">${ICON.front}</div>`;
+  html += `<div class="cx" data-act="copy" title="再制">${ICON.copy}</div>`;
+  html += `<div class="cx danger" data-act="del" title="删除">${ICON.trash}</div>`;
+  return html;
+}
+
+ctxbar.addEventListener('pointerdown', e => {
+  e.stopPropagation();
+  const t = e.target.closest('[data-act]');
+  if (!t) return;
+  const act = t.dataset.act;
+  const ids = [...state.selection];
+  const one = findEl(ids[0]);
+  if (act === 'color' && one) {
+    pushHistory();
+    one.color = t.dataset.v;
+    const dom = domMap.get(one.id);
+    if (dom) dom.className = elClass(one) + ' sel editable';
+    markDirty();
+  } else if (act === 'del') {
+    removeEls(ids);
+  } else if (act === 'copy') {
+    duplicate(ids);
+  } else if (act === 'front') {
+    bringToFront(ids);
+  } else if (act === 'focus' && one) {
+    focusOn(one);
+  } else if (act === 'open' && one) {
+    const url = one.bvid ? `https://www.bilibili.com/video/${one.bvid}` : `https://www.bilibili.com/video/av${one.aid}`;
+    window.open(url, '_blank', 'noopener');
+  } else if (act === 'reload' && one) {
+    const dom = domMap.get(one.id);
+    if (dom) { unmountVideo(dom); mountVideo(dom, one); }
+  } else if (act === 'font') {
+    adjustFontSize(ids, +t.dataset.v);
+  } else if (act === 'child' && one) {
+    addMindNode(one.id, 'child');
+  } else if (act === 'sibling' && one) {
+    addMindNode(one.id, 'sibling');
+  } else if (act === 'arrow' && one) {
+    pushHistory();
+    one.arrow = { none: 'end', end: 'both', both: 'none' }[one.arrow || 'end'] || 'end';
+    rebuildLink(one);
+    markDirty();
+  } else if (act === 'curve' && one) {
+    pushHistory();
+    one.curve = one.curve === 'line' ? 'curve' : 'line';
+    refreshLink(one);
+    markDirty();
+  }
+});
+
+/* 字号：改完自动长高，避免文字被裁掉 */
+function adjustFontSize(ids, delta) {
+  const list = ids.map(findEl).filter(d => d && (d.type === 'note' || d.type === 'text'))
+    .filter(d => clamp(Math.round(fontSizeOf(d) + delta), 10, 120) !== fontSizeOf(d));
+  if (!list.length) return;
+  pushHistory();
+  list.forEach(d => {
+    d.fontSize = clamp(Math.round(fontSizeOf(d) + delta), 10, 120);
+    refreshEl(d);
+    autoGrow(d);
+  });
+  updateCtxbar();
+  drawMinimap();
+  markDirty();
+}
+
+function autoGrow(d) {
+  const dom = domMap.get(d.id);
+  const t = dom && dom.querySelector('.txt');
+  if (!t) return;
+  const pad = d.type === 'note' ? 38 : 12;
+  const need = t.scrollHeight + pad;
+  if (need > d.h && need < 1600) { d.h = need; setBox(dom, d); }
+  updateLinksFor([d.id]);
+}
+
+function rebuildLink(d) {
+  const dom = domMap.get(d.id);
+  if (!dom) return;
+  const g = computeLink(d);
+  if (g) { d.x = g.x; d.y = g.y; d.w = g.w; d.h = g.h; }
+  setBox(dom, d);
+  const body = dom.querySelector('.el-body');
+  body.innerHTML = '';
+  body.appendChild(linkSvg(d, g));
+}
+
+function duplicate(ids) {
+  pushHistory();
+  const copies = [];
+  ids.forEach(id => {
+    const e = findEl(id);
+    if (!e || e.type === 'link') return;      // 连线不参与复制
+    const c = JSON.parse(JSON.stringify(e));
+    c.id = uid();
+    c.x += 28; c.y += 28;
+    c.z = els().reduce((m, x) => Math.max(m, x.z || 0), 0) + 1;
+    els().push(c);
+    const dom = buildEl(c);
+    dom.classList.add('appear');
+    setTimeout(() => dom.classList.remove('appear'), 480);
+    world.appendChild(dom);
+    domMap.set(c.id, dom);
+    copies.push(c.id);
+  });
+  select(copies);
+  updateBoardMeta();
+  markDirty();
+}
+
+/* ---------------- 视频挂载（懒加载，保证流畅） ---------------- */
+function videoSrc(d) {
+  const base = 'https://player.bilibili.com/player.html';
+  const q = d.bvid ? `bvid=${d.bvid}` : `aid=${d.aid}`;
+  return `${base}?${q}&page=${d.page || 1}&high_quality=1&danmaku=0&as_wide=1&autoplay=0`;
+}
+function mountVideo(dom, d) {
+  if (dom.querySelector('.v-frame')) return;
+  const f = document.createElement('iframe');
+  f.className = 'v-frame';
+  f.src = videoSrc(d);
+  f.setAttribute('allowfullscreen', '');
+  f.setAttribute('allow', 'fullscreen; autoplay; encrypted-media; picture-in-picture');
+  f.setAttribute('scrolling', 'no');
+  f.setAttribute('frameborder', '0');
+  const stub = dom.querySelector('.v-stub');
+  if (stub) stub.remove();
+  // iframe 固定用「内部基准尺寸」渲染（B 站播放器只在加载时排一次版），
+  // 之后靠 transform 缩放去跟随卡片大小 —— 既不重载、也不丢播放进度
+  const base = videoBase(d);
+  f.style.width = base.w + 'px';
+  f.style.height = base.h + 'px';
+  dom.dataset.vw = base.w;
+  dom.dataset.vh = base.h;
+  dom.querySelector('.el-body').appendChild(f);
+  updateVideoScale(dom, d);
+  dom.classList.remove('paused');
+  dom.dataset.mounted = '1';
+}
+
+/* 基准尺寸 = 卡片当前尺寸的 2 倍（超采样，放大也清楚），并夹在合理区间 */
+function videoBase(d) {
+  return {
+    w: clamp(Math.round(d.w * 2), 640, 2560),
+    h: clamp(Math.round(Math.max(40, d.h - 34) * 2), 360, 1440),
+  };
+}
+function updateVideoScale(dom, d) {
+  const f = dom.querySelector('.v-frame');
+  if (!f) return;
+  const bw = +dom.dataset.vw || 1000, bh = +dom.dataset.vh || 562;
+  const k = Math.min(d.w / bw, Math.max(40, d.h - 34) / bh);
+  f.style.transformOrigin = '0 0';
+  f.style.transform = `scale(${k})`;
+}
+function unmountVideo(dom) {
+  const f = dom.querySelector('.v-frame');
+  if (f) f.remove();
+  dom.classList.add('paused');
+  delete dom.dataset.mounted;
+  if (!dom.querySelector('.v-stub')) {
+    const stub = document.createElement('div');
+    stub.className = 'v-stub';
+    stub.innerHTML = `<svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.8)" stroke-width="1.6"><rect x="2.5" y="5" width="19" height="14" rx="3.5"/><path d="M10.5 9.5l5 2.5-5 2.5z" fill="rgba(255,255,255,.8)" stroke="none"/></svg><span>点击载入播放器</span>`;
+    dom.querySelector('.el-body').appendChild(stub);
+  }
+}
+
+/* ---------------- 聚焦（景深 + 相机飞行） ---------------- */
+function focusOn(d) {
+  if (state.focusId === d.id) return;
+  if (!state.focusId) state.camBeforeFocus = { ...state.camera };
+  pushHistoryless(() => {});
+  state.focusId = d.id;
+  setImmersive(true);
+  for (const e of els()) {
+    const dom = domMap.get(e.id);
+    if (!dom) continue;
+    dom.classList.toggle('dimmed', e.id !== d.id);
+  }
+  const vw = innerWidth, vh = innerHeight;
+  const sc = clamp(Math.min(vw * 0.62 / d.w, vh * 0.68 / d.h), 0.15, 2.2);
+  const c = centerCam(d.x + d.w / 2, d.y + d.h / 2, sc);
+  flyTo(c.x, c.y, sc, dur(760));
+  select([d.id]);
+  ctxbar.classList.remove('show');
+}
+function exitFocus(instant) {
+  if (!state.focusId) return;
+  state.focusId = null;
+  setImmersive(false);
+  for (const dom of domMap.values()) dom.classList.remove('dimmed');
+  const c = state.camBeforeFocus;
+  state.camBeforeFocus = null;
+  if (c) flyTo(c.x, c.y, c.scale, instant ? 0 : 680);
+}
+function pushHistoryless() { }
+
+function setImmersive(on) {
+  state.immersive = on;
+  document.body.classList.toggle('immersive', on);
+}
+
+/* ---------------- 文本编辑 ---------------- */
+function enterEdit(id) {
+  const d = findEl(id);
+  const dom = domMap.get(id);
+  if (!d || !dom) return;
+  if (d.type !== 'note' && d.type !== 'text') return;
+  state.editingId = id;
+  dom.classList.add('editing');
+  dom.classList.remove('editable', 'anchors');   // 编辑时收起手柄与连接锚点
+  const t = dom.querySelector('.txt');
+  t.contentEditable = 'true';
+  t.focus();
+  const r = document.createRange();
+  r.selectNodeContents(t);
+  r.collapse(false);
+  const sel = getSelection();
+  sel.removeAllRanges();
+  sel.addRange(r);
+  ctxbar.classList.remove('show');
+}
+function exitEdit() {
+  const id = state.editingId;
+  if (!id) return;
+  const dom = domMap.get(id);
+  state.editingId = null;
+  if (dom) {
+    dom.classList.remove('editing');
+    const t = dom.querySelector('.txt');
+    if (t) {
+      t.contentEditable = 'false';
+      const d = findEl(id);
+      if (d && d.text !== t.textContent) { d.text = t.textContent; markDirty(); }
+      t.blur();
+    }
+    if (state.selection.has(id)) {
+      dom.classList.add('editable');
+      if (state.selection.size === 1) dom.classList.add('anchors');
+    }
+  }
+  if (getSelection()) getSelection().removeAllRanges();
+  updateCtxbar();
+}
+
+/* ---------------- 指针交互 ---------------- */
+let drag = null;
+let spaceDown = false;
+
+/* 触屏多指：双指 = 缩放 + 平移 */
+const touchPts = new Map();
+let pinch = null;
+
+function startPinch() {
+  if (touchPts.size < 2) return;
+  // 第二指落下：取消单指正在进行的操作（拖拽 / 框选 / 画笔）
+  if (drag) { const d = drag; if (d.end) d.end(); if (drag === d) drag = null; }
+  marquee.style.display = 'none';
+  document.body.classList.remove('dragging');
+  cancelCamAnim();
+  const [a, b] = [...touchPts.values()];
+  pinch = {
+    dist: Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)),
+    mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2,
+    cam: { ...state.camera },
+  };
+}
+function endPinch() {
+  if (!pinch) return;
+  pinch = null;
+  markDirty();
+}
+function updatePinch() {
+  if (!pinch || touchPts.size < 2) return;
+  const [a, b] = [...touchPts.values()];
+  const dist = Math.max(1, Math.hypot(a.x - b.x, a.y - b.y));
+  const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+  const s0 = pinch.cam.scale;
+  const s1 = clamp(s0 * (dist / pinch.dist), MIN_SCALE, MAX_SCALE);
+  // 按下时中点对应的世界点，始终跟随当前中点
+  const wx = pinch.mx / s0 + pinch.cam.x;
+  const wy = pinch.my / s0 + pinch.cam.y;
+  state.camera.scale = s1;
+  state.camera.x = wx - mx / s1;
+  state.camera.y = wy - my / s1;
+  requestTick();
+}
+
+stage.addEventListener('pointerdown', e => {
+  if (e.pointerType !== 'touch') return;
+  touchPts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (touchPts.size === 2) startPinch();
+});
+window.addEventListener('pointermove', e => {
+  if (e.pointerType !== 'touch' || !touchPts.has(e.pointerId)) return;
+  touchPts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (pinch) updatePinch();
+}, { passive: true });
+['pointerup', 'pointercancel'].forEach(t => window.addEventListener(t, e => {
+  if (e.pointerType !== 'touch') return;
+  touchPts.delete(e.pointerId);
+  if (touchPts.size < 2) endPinch();
+}));
+
+stage.addEventListener('pointerdown', onDown);
+
+/* 右键用于平移后，画布上的系统菜单要关掉（编辑文字时保留，方便粘贴） */
+stage.addEventListener('contextmenu', e => {
+  if (state.editingId) return;
+  if (e.target.closest('.txt')) return;
+  e.preventDefault();
+});
+
+function onDown(e) {
+  if (pinch) return;                   // 双指手势进行中，不再走单指逻辑
+  if (e.target.closest('.ctxbar') || e.target.closest('.topbar') || e.target.closest('.toolbar')) return;
+
+  // 右键：直接拖画布（编辑文字时让位给系统的粘贴菜单）
+  if (e.button === 2) {
+    if (state.editingId) return;
+    startPan(e);
+    return;
+  }
+
+  const elDom = e.target.closest('.el');
+  const vid = elDom && elDom.classList.contains('el-video');
+
+  // 视频卡：点击占位层 → 载入播放器
+  if (vid && elDom.classList.contains('paused') && state.tool === 'select' && !spaceDown && e.button !== 1) {
+    const d = findEl(elDom.dataset.id);
+    if (d) mountVideo(elDom, d);
+    select([d.id]);
+    e.preventDefault();
+    return;
+  }
+
+  if (state.editingId && elDom && elDom.dataset.id === state.editingId) return; // 编辑中不劫持
+  if (state.editingId && (!elDom || elDom.dataset.id !== state.editingId)) exitEdit();
+
+  const panMode = e.button === 1 || spaceDown || state.tool === 'pan';
+
+  if (state.tool === 'erase') {
+    if (elDom) { removeEls([elDom.dataset.id]); }
+    return;
+  }
+  if (state.tool === 'ink' && !panMode) { startInk(e); return; }
+
+  if (elDom && !panMode) {
+    const id = elDom.dataset.id;
+    const isLink = elDom.classList.contains('el-link');
+    if (state.tool === 'link' && !isLink) { select([id]); startLinkDrag(e, id, 'auto'); return; }
+    const additive = e.shiftKey || e.metaKey || e.ctrlKey;
+    let ids;
+    if (additive) {
+      ids = state.selection.has(id) ? [...state.selection] : [...state.selection, id];
+    } else {
+      ids = state.selection.has(id) ? [...state.selection] : [id];
+    }
+    select(ids, additive);
+    if (isLink) return;               // 连线跟随端点自动重算，不直接拖动
+    startDrag(e, ids);
+    return;
+  }
+
+  if (panMode) { startPan(e); return; }
+
+  if (state.tool === 'select') {
+    // 触屏上单指拖空白更自然的是平移（框选留给桌面鼠标）
+    if (e.pointerType === 'touch') { startPan(e); return; }
+    if (state.focusId) { exitFocus(); return; }   // 聚焦时点一下空白就退出
+    startMarquee(e);
+    return;
+  }
+
+  // 创建型工具
+  const p = screenToWorld(e.clientX, e.clientY);
+  if (state.tool === 'note') createNote(p);
+  else if (state.tool === 'text') createText(p);
+  setTool('select');
+}
+
+function startPan(e) {
+  cancelCamAnim();
+  const sx = e.clientX, sy = e.clientY;
+  const c0 = { ...state.camera };
+  drag = {
+    mode: 'pan', moved: false,
+    move(ev) {
+      const dx = ev.clientX - sx, dy = ev.clientY - sy;
+      if (!drag.moved && Math.abs(dx) + Math.abs(dy) > 3) {
+        drag.moved = true;
+        document.body.classList.add('dragging');
+        stage.classList.add('is-panning');
+      }
+      if (!drag.moved) return;
+      state.camera.x = c0.x - dx / state.camera.scale;
+      state.camera.y = c0.y - dy / state.camera.scale;
+      requestTick();
+    },
+    end() {
+      document.body.classList.remove('dragging');
+      stage.classList.remove('is-panning');
+      if (drag.moved) markDirty();
+    }
+  };
+  bindDrag(e);
+}
+
+function startDrag(e, ids) {
+  cancelCamAnim();
+  const sx = e.clientX, sy = e.clientY;
+  const items = ids.map(id => ({ id, d: findEl(id) })).filter(o => o.d);
+  const start = items.map(o => ({ id: o.id, x: o.d.x, y: o.d.y }));
+  const links = els().filter(e => e.type === 'link' && ids.includes(e.from) || (e.type === 'link' && ids.includes(e.to)));
+  drag = {
+    mode: 'drag', moved: false, ids,
+    move(ev) {
+      const dx = (ev.clientX - sx) / state.camera.scale;
+      const dy = (ev.clientY - sy) / state.camera.scale;
+      if (!drag.moved && Math.abs(dx * state.camera.scale) + Math.abs(dy * state.camera.scale) > 3) {
+        drag.moved = true;
+        pushHistory();
+        document.body.classList.add('dragging');
+        items.forEach(o => domMap.get(o.id)?.classList.add('dragging'));
+      }
+      if (!drag.moved) return;
+      start.forEach(s => {
+        const d = findEl(s.id);
+        if (!d) return;
+        d.x = s.x + dx; d.y = s.y + dy;
+        const dom = domMap.get(s.id);
+        if (dom) setBox(dom, d);
+      });
+      // 对齐吸附（按住 ⌘/Ctrl 可临时关掉）
+      const snap = (ev.metaKey || ev.ctrlKey)
+        ? { dx: 0, dy: 0, vx: null, hy: null }
+        : snapFor(unionBox(items), new Set(ids));
+      if (snap.dx || snap.dy) {
+        items.forEach(o => {
+          const d = findEl(o.id);
+          if (!d) return;
+          d.x += snap.dx; d.y += snap.dy;
+          const dom = domMap.get(o.id);
+          if (dom) setBox(dom, d);
+        });
+      }
+      showGuides(snap.vx, snap.hy);
+      links.forEach(refreshLink);     // 连线实时跟随
+      updateCtxbar();
+    },
+    end() {
+      hideGuides();
+      document.body.classList.remove('dragging');
+      items.forEach(o => domMap.get(o.id)?.classList.remove('dragging'));
+      if (drag.moved) {
+        items.forEach(o => {
+          const dom = domMap.get(o.id);
+          if (dom) {
+            dom.classList.add('dropped');
+            setTimeout(() => dom.classList.remove('dropped'), 320);
+          }
+        });
+        drawMinimap();
+        markDirty();
+      }
+    }
+  };
+  bindDrag(e);
+}
+
+function startMarquee(e) {
+  const sx = e.clientX, sy = e.clientY;
+  const additive = e.shiftKey;
+  const base = additive ? [...state.selection] : [];
+  drag = {
+    mode: 'marquee', moved: false,
+    move(ev) {
+      const x = Math.min(sx, ev.clientX), y = Math.min(sy, ev.clientY);
+      const w = Math.abs(ev.clientX - sx), h = Math.abs(ev.clientY - sy);
+      if (!drag.moved && w + h > 4) { drag.moved = true; marquee.style.display = 'block'; }
+      if (!drag.moved) return;
+      marquee.style.left = x + 'px'; marquee.style.top = y + 'px';
+      marquee.style.width = w + 'px'; marquee.style.height = h + 'px';
+      const a = screenToWorld(x, y), b = screenToWorld(x + w, y + h);
+      const hit = els().filter(el => !(el.x + el.w < a.x || el.x > b.x || el.y + el.h < a.y || el.y > b.y)).map(el => el.id);
+      select([...new Set([...base, ...hit])]);
+    },
+    end() {
+      marquee.style.display = 'none';
+      if (!drag.moved) clearSelection();
+    }
+  };
+  bindDrag(e);
+}
+
+/* 缩放手柄 */
+stage.addEventListener('pointerdown', e => {
+  const anchor = e.target.closest('.anchor');
+  if (anchor) {
+    e.stopPropagation();
+    startLinkDrag(e, anchor.closest('.el').dataset.id, anchor.dataset.a);
+    return;
+  }
+  const h = e.target.closest('.handle');
+  if (!h) return;
+  e.stopPropagation();
+  const id = h.closest('.el').dataset.id;
+  const d = findEl(id);
+  if (!d) return;
+  cancelCamAnim();
+  pushHistory();
+  const sx = e.clientX, sy = e.clientY;
+  const s0 = { x: d.x, y: d.y, w: d.w, h: d.h };
+  const dir = h.dataset.h;
+  const ratio = (d.type === 'video' || d.type === 'image') ? s0.h / s0.w : 0;
+  const links = els().filter(e => e.type === 'link' && (e.from === id || e.to === id));
+  drag = {
+    mode: 'resize', moved: false,
+    move(ev) {
+      const dx = (ev.clientX - sx) / state.camera.scale;
+      const dy = (ev.clientY - sy) / state.camera.scale;
+      let w = s0.w, h = s0.h, x = s0.x, y = s0.y;
+      if (dir.includes('e')) w = s0.w + dx;
+      if (dir.includes('s')) h = s0.h + dy;
+      if (dir.includes('w')) { w = s0.w - dx; x = s0.x + dx; }
+      if (dir.includes('n')) { h = s0.h - dy; y = s0.y + dy; }
+      w = Math.max(60, w); h = Math.max(45, h);
+      if (ratio) h = w * ratio;
+      d.w = w; d.h = h; d.x = x; d.y = y;
+      const dom = domMap.get(id);
+      if (dom) {
+        setBox(dom, d);
+        if (d.type === 'video') updateVideoScale(dom, d);   // 视频跟着卡片实时缩放
+      }
+      links.forEach(refreshLink);
+      updateCtxbar();
+    },
+    end() {
+      refreshEl(d);
+      links.forEach(refreshLink);
+      drawMinimap();
+      markDirty();
+    }
+  };
+  bindDrag(e);
+}, true);
+
+/* 画笔 */
+let inkLive = null;
+function startInk(e) {
+  pushHistory();                       // 入栈：undo 可撤销整笔
+  const p = screenToWorld(e.clientX, e.clientY);
+  const d = { id: uid(), type: 'ink', x: p.x, y: p.y, w: 1, h: 1, points: [[p.x, p.y]] };
+  els().push(d);
+  const dom = buildEl(d);
+  world.appendChild(dom);
+  domMap.set(d.id, dom);
+  inkLive = { d, dom, last: p };
+  drag = {
+    mode: 'ink', moved: true,
+    move(ev) {
+      const q = screenToWorld(ev.clientX, ev.clientY);
+      const last = inkLive.last;
+      if (Math.hypot(q.x - last.x, q.y - last.y) * state.camera.scale < 2.2) return;
+      inkLive.d.points.push([q.x, q.y]);
+      inkLive.last = q;
+      updateInkFrame(inkLive.d, dom);
+    },
+    end() {
+      const pts = d.points;
+      if (pts.length < 2) {
+        const i = els().findIndex(e2 => e2.id === d.id);
+        if (i >= 0) els().splice(i, 1);
+        domMap.delete(d.id);
+        dom.remove();
+      } else {
+        finalizeInk(d);
+        select([d.id]);
+        updateBoardMeta();
+      }
+      inkLive = null;
+      drawMinimap();
+      markDirty();
+    }
+  };
+  bindDrag(e);
+}
+function updateInkFrame(d, dom) {
+  const xs = d.points.map(p => p[0]), ys = d.points.map(p => p[1]);
+  const minX = Math.min(...xs), minY = Math.min(...ys);
+  const pad = 6;
+  d.x = minX - pad; d.y = minY - pad;
+  d.w = Math.max(...xs) - minX + pad * 2;
+  d.h = Math.max(...ys) - minY + pad * 2;
+  setBox(dom, d);
+  const path = dom.querySelector('path');
+  if (path) path.setAttribute('d', ptsToPath(d.points));
+  const svg = dom.querySelector('svg');
+  if (svg) { svg.setAttribute('width', d.w); svg.setAttribute('height', d.h); svg.setAttribute('viewBox', `0 0 ${d.w} ${d.h}`); }
+}
+function finalizeInk(d) {
+  const dom = domMap.get(d.id);
+  if (!dom) return;
+  const svg = dom.querySelector('svg');
+  if (svg) { svg.setAttribute('width', d.w); svg.setAttribute('height', d.h); }
+  const path = dom.querySelector('path');
+  if (path) path.setAttribute('d', ptsToPath(d.points));
+}
+
+function bindDrag(e) {
+  const move = ev => { if (drag && drag.move) drag.move(ev); };
+  const up = ev => {
+    window.removeEventListener('pointermove', move);
+    window.removeEventListener('pointerup', up);
+    window.removeEventListener('pointercancel', up);
+    if (drag) {
+      const d = drag;
+      if (d.end) d.end(ev);            // end 内部仍可读取 drag 状态
+      if (drag === d) drag = null;
+    }
+  };
+  window.addEventListener('pointermove', move);
+  window.addEventListener('pointerup', up);
+  window.addEventListener('pointercancel', up);
+  e.preventDefault();
+}
+
+/* 双击 */
+stage.addEventListener('dblclick', e => {
+  const elDom = e.target.closest('.el');
+  if (elDom) {
+    const d = findEl(elDom.dataset.id);
+    if (!d) return;
+    if (d.type === 'note' || d.type === 'text') { select([d.id]); enterEdit(d.id); }
+    else focusOn(d);
+  } else {
+    if (state.focusId) exitFocus();
+    else fitAll(560);
+  }
+});
+
+/* 滚轮：缩放 / 平移 */
+stage.addEventListener('wheel', e => {
+  e.preventDefault();
+  cancelCamAnim();
+  if (state.editingId) exitEdit();
+  const trackpadPan = !e.ctrlKey && (Math.abs(e.deltaX) > 0 || !Number.isInteger(e.deltaY));
+  if (trackpadPan) {
+    // 双指滑动 → 平移
+    state.camera.x += e.deltaX / state.camera.scale;
+    state.camera.y += e.deltaY / state.camera.scale;
+    requestTick();
+    markDirty();
+    return;
+  }
+  const unit = e.deltaMode === 1 ? 18 : (e.deltaMode === 2 ? 320 : 1);
+  const delta = e.deltaY * unit;
+  const factor = Math.exp(-delta * (e.ctrlKey ? 0.012 : 0.0022));
+  zoomBy(clamp(factor, 0.5, 2), e.clientX, e.clientY);
+}, { passive: false });
+
+/* ---------------- 键盘 ---------------- */
+window.addEventListener('keydown', e => {
+  const typing = e.target.isContentEditable || e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA';
+  if (e.code === 'Space' && !typing) {
+    if (state.presenting) { e.preventDefault(); stepView(e.shiftKey ? -1 : 1); return; }
+    if (!spaceDown) { spaceDown = true; stage.classList.add('space'); }
+    e.preventDefault();
+    return;
+  }
+  if (typing) {
+    if (e.key === 'Escape') { e.target.blur(); exitEdit(); }
+    return;
+  }
+  const meta = e.metaKey || e.ctrlKey;
+
+  if (meta && e.key.toLowerCase() === 'z') {
+    e.preventDefault();
+    e.shiftKey ? redo() : undo();
+    return;
+  }
+  if (meta && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); return; }
+  if (meta && e.key.toLowerCase() === 'a') { e.preventDefault(); select(els().map(x => x.id)); return; }
+  if (meta && e.key.toLowerCase() === 'c') { copySelection(); return; }
+  if (meta && e.key.toLowerCase() === 'v') { /* 由 paste 事件处理 */ return; }
+  if (meta && e.key.toLowerCase() === 'd') { e.preventDefault(); duplicate([...state.selection]); return; }
+  if (meta && e.shiftKey && e.key.toLowerCase() === 'b') { e.preventDefault(); toggleBoards(); return; }
+  if (meta && e.shiftKey && e.key.toLowerCase() === 'r') { e.preventDefault(); captureView(); return; }
+  if (meta && e.shiftKey && e.key.toLowerCase() === 'p') { e.preventDefault(); togglePresent(); return; }
+  if (meta && (e.key === '=' || e.key === '+')) { e.preventDefault(); adjustFontSize([...state.selection], 2); return; }
+  if (meta && (e.key === '-' || e.key === '_')) { e.preventDefault(); adjustFontSize([...state.selection], -2); return; }
+  if (meta) return;
+
+  if (state.presenting) {
+    if (e.key === 'ArrowRight' || e.key === 'PageDown') { e.preventDefault(); stepView(1); return; }
+    if (e.key === 'ArrowLeft' || e.key === 'PageUp') { e.preventDefault(); stepView(-1); return; }
+  }
+
+  switch (e.key) {
+    case 'Tab': {
+      if (state.selection.size === 1) {
+        const id = [...state.selection][0];
+        const d = findEl(id);
+        if (d && (d.type === 'note' || d.type === 'text')) { e.preventDefault(); addMindNode(id, 'child'); }
+      }
+      break;
+    }
+    case 'Enter': {
+      if (state.selection.size === 1) {
+        const id = [...state.selection][0];
+        const d = findEl(id);
+        if (d && (d.type === 'note' || d.type === 'text')) { e.preventDefault(); addMindNode(id, 'sibling'); }
+      }
+      break;
+    }
+    case 'l': case 'L': setTool('link'); break;
+    case 'v': case 'V': setTool('select'); break;
+    case 'h': case 'H': setTool('pan'); break;
+    case 'n': case 'N': setTool('note'); break;
+    case 't': case 'T': setTool('text'); break;
+    case 'i': case 'I': setTool('image'); openImage(); break;
+    case 'b': case 'B': setTool('video'); openVideoModal(); break;
+    case 'p': case 'P': setTool('ink'); break;
+    case 'e': case 'E': setTool('erase'); break;
+    case '1': fitAll(); break;
+    case '0': flyTo(state.camera.x, state.camera.y, 1, 420); break;
+    case 'ArrowRight': if ((board().views || []).length) { e.preventDefault(); stepView(1); } break;
+    case 'ArrowLeft': if ((board().views || []).length) { e.preventDefault(); stepView(-1); } break;
+    case 'Escape':
+      if (state.presenting) { togglePresent(false); }
+      else if (state.focusId) exitFocus();
+      else if (state.editingId) exitEdit();
+      else if (helpMask.classList.contains('show')) helpMask.classList.remove('show');
+      else if (modalMask.classList.contains('show')) closeModal();
+      else if (!boardsPanel.classList.contains('hidden')) toggleBoards(false);
+      else clearSelection();
+      break;
+    case 'Delete': case 'Backspace':
+      if (state.selection.size) { e.preventDefault(); removeEls([...state.selection]); }
+      break;
+    case 'Enter':
+      if (state.selection.size === 1) {
+        const d = findEl([...state.selection][0]);
+        if (d && (d.type === 'note' || d.type === 'text')) enterEdit(d.id);
+      }
+      break;
+  }
+});
+window.addEventListener('keyup', e => {
+  if (e.code === 'Space') { spaceDown = false; stage.classList.remove('space'); }
+});
+window.addEventListener('blur', () => { spaceDown = false; stage.classList.remove('space'); });
+
+/* ---------------- 剪贴板 / 拖放 ---------------- */
+let clipboard = [];
+function copySelection() {
+  clipboard = [...state.selection].map(findEl).filter(Boolean).map(e => JSON.parse(JSON.stringify(e)));
+  if (clipboard.length) showToast(`已复制 ${clipboard.length} 个元素`);
+}
+window.addEventListener('paste', e => {
+  if (e.target.isContentEditable || e.target.tagName === 'INPUT') return;
+  const items = e.clipboardData?.items || [];
+  for (const it of items) {
+    if (it.type.startsWith('image/')) {
+      const f = it.getAsFile();
+      if (f) { addImageFile(f, screenToWorld(innerWidth / 2, innerHeight / 2)); e.preventDefault(); }
+      return;
+    }
+  }
+  const txt = (e.clipboardData || window.clipboardData).getData('text');
+  if (!txt) return;
+  const bili = parseBili(txt);
+  if (bili) {
+    addVideo(bili, screenToWorld(innerWidth / 2, innerHeight / 2));
+    showToast('已插入 B 站视频');
+    e.preventDefault();
+    return;
+  }
+  if (/^https?:\/\//i.test(txt.trim()) && /\.(png|jpe?g|gif|webp|avif|svg)(\?.*)?$/i.test(txt.trim())) {
+    addImageUrl(txt.trim(), screenToWorld(innerWidth / 2, innerHeight / 2));
+    showToast('已插入图片');
+    e.preventDefault();
+  }
+});
+
+['dragenter', 'dragover'].forEach(t => stage.addEventListener(t, e => {
+  if ([...e.dataTransfer.types].includes('Files')) { e.preventDefault(); dropHint.classList.add('show'); }
+}));
+['dragleave', 'dragend'].forEach(t => stage.addEventListener(t, e => {
+  if (e.relatedTarget === null || e.target === stage) dropHint.classList.remove('show');
+}));
+stage.addEventListener('drop', e => {
+  e.preventDefault();
+  dropHint.classList.remove('show');
+  const files = [...(e.dataTransfer.files || [])].filter(f => f.type.startsWith('image/'));
+  if (!files.length) return;
+  const p0 = screenToWorld(e.clientX, e.clientY);
+  files.forEach((f, i) => addImageFile(f, { x: p0.x + i * 32, y: p0.y + i * 32 }));
+  showToast(`已置入 ${files.length} 张图片`);
+});
+
+/* ---------------- 创建元素 ---------------- */
+function createNote(p) {
+  const d = { id: uid(), type: 'note', x: p.x - 105, y: p.y - 90, w: 210, h: 180, text: '', color: 'c-yellow' };
+  addEl(d);
+  select([d.id]);
+  enterEdit(d.id);
+}
+function createText(p) {
+  const d = { id: uid(), type: 'text', x: p.x - 130, y: p.y - 30, w: 260, h: 60, text: '' };
+  addEl(d);
+  select([d.id]);
+  enterEdit(d.id);
+}
+function openImage() { fileInput.value = ''; fileInput.click(); setTool('select'); }
+fileInput.addEventListener('change', () => {
+  const files = [...fileInput.files].filter(f => f.type.startsWith('image/'));
+  addImages(files);
+});
+function addImages(files) {
+  if (!files.length) return;
+  const c = screenToWorld(innerWidth / 2, innerHeight / 2);
+  const n = files.length;
+  files.forEach((f, i) => {
+    const cols = Math.min(4, n);
+    const gx = (i % cols) - (cols - 1) / 2, gy = Math.floor(i / cols) - (Math.ceil(n / cols) - 1) / 2;
+    addImageFile(f, { x: c.x + gx * 60, y: c.y + gy * 60 });
+  });
+  if (n <= 6) showToast(`已置入 ${n} 张图片`);   // 批量时静默，不打扰
+}
+
+/* 图片一律先降采样再进画布：原始相机图动辄好几 MB，塞进 localStorage 会直接写爆 */
+const IMG_MAX_SIDE = 2048;      // 最长边上限（画布上放大到 3~4 倍仍然是清晰的）
+const IMG_KEEP_RAW = 400000;    // 小于这个长度（约 290KB）的原图直接用，避免二次压缩掉画质
+const IMG_QUALITY = 0.88;       // JPEG 质量
+
+function downscale(dataUrl) {
+  return new Promise(resolve => {
+    if (dataUrl.length <= IMG_KEEP_RAW) return resolve(dataUrl);
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const nw = img.naturalWidth || 0, nh = img.naturalHeight || 0;
+        if (!nw || !nh) return resolve(dataUrl);
+        const k = Math.min(1, IMG_MAX_SIDE / Math.max(nw, nh));
+        if (k >= 1) return resolve(dataUrl);
+        const cv = document.createElement('canvas');
+        cv.width = Math.round(nw * k);
+        cv.height = Math.round(nh * k);
+        const ctx = cv.getContext('2d');
+        if (!ctx || !ctx.drawImage) return resolve(dataUrl);
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(img, 0, 0, cv.width, cv.height);
+
+        // 带透明的图必须走 PNG，否则 JPEG 会把透明区压成黑底
+        let hasAlpha = false;
+        try {
+          const data = ctx.getImageData(0, 0, cv.width, cv.height).data;
+          for (let i = 3; i < data.length; i += 4 * 53) {
+            if (data[i] < 250) { hasAlpha = true; break; }
+          }
+        } catch (e) { hasAlpha = false; }
+
+        const out = hasAlpha ? cv.toDataURL('image/png') : cv.toDataURL('image/jpeg', IMG_QUALITY);
+        resolve(out && out.length && out.length < dataUrl.length ? out : dataUrl);
+      } catch (err) { resolve(dataUrl); }
+    };
+    img.onerror = () => resolve(dataUrl);
+    img.src = dataUrl;
+  });
+}
+
+function addImageFile(file, p) {
+  const fr = new FileReader();
+  fr.onload = async () => {
+    const raw = String(fr.result || '');
+    if (!raw) return showToast('图片读取失败');
+    let src = raw;
+    try { src = await downscale(raw); } catch (e) { src = raw; }
+
+    // 云同步开着就把图片传到云存储：画布数据里只留一个短链接。
+    // 好处有两个：图片也能跨设备看到，且不再挤占本机 localStorage 的 5MB 额度。
+    // 没开云同步（或上传失败）就照旧存 base64，功能不退化。
+    const up = await cloudUploadImage(src);
+    const useSrc = up ? up.url : src;
+
+    const img = new Image();
+    img.onload = () => {
+      const maxW = 460;
+      const w = Math.min(maxW, img.naturalWidth || maxW);
+      const h = w * (img.naturalHeight || maxW) / (img.naturalWidth || maxW);
+      const d = { id: uid(), type: 'image', x: p.x - w / 2, y: p.y - h / 2, w, h, src: useSrc };
+      if (up) d.imgId = up.id;
+      addEl(d);
+      if (up) scheduleCloudPush();
+    };
+    img.onerror = () => showToast('图片读取失败');
+    img.src = useSrc;
+  };
+  fr.onerror = () => showToast('图片读取失败');
+  fr.readAsDataURL(file);
+}
+function addImageUrl(url, p) {
+  const img = new Image();
+  img.crossOrigin = 'anonymous';
+  img.onload = () => {
+    const maxW = 460;
+    const w = Math.min(maxW, img.naturalWidth);
+    const h = w * img.naturalHeight / img.naturalWidth;
+    addEl({ id: uid(), type: 'image', x: p.x - w / 2, y: p.y - h / 2, w, h, src: url });
+  };
+  img.onerror = () => showToast('图片加载失败');
+  img.src = url;
+}
+
+/* B 站 */
+function parseBili(input) {
+  const s = String(input || '').trim();
+  let m = s.match(/BV[0-9A-Za-z]{10}/);
+  if (m) {
+    const pm = s.match(/[?&]p=(\d+)/);
+    return { bvid: m[0], page: pm ? +pm[1] : 1 };
+  }
+  m = s.match(/(?:bilibili\.com\/video\/|^\/?)(av\d+)/i) || s.match(/\bav(\d+)\b/i);
+  if (m) {
+    const num = typeof m[1] === 'string' && m[1].startsWith('av') ? m[1].slice(2) : m[1];
+    const pm = s.match(/[?&]p=(\d+)/);
+    return { aid: num, page: pm ? +pm[1] : 1 };
+  }
+  return null;
+}
+function addVideo(info, p) {
+  const w = 500;
+  const h = Math.round(w * 9 / 16) + 34;
+  const d = { id: uid(), type: 'video', x: p.x - w / 2, y: p.y - h / 2, w, h, page: info.page || 1, title: '' };
+  if (info.bvid) d.bvid = info.bvid; else d.aid = info.aid;
+  addEl(d);
+  select([d.id]);
+  return d;
+}
+
+/* ---------------- 弹窗 ---------------- */
+let modalResolve = null;
+function openVideoModal() {
+  modalMask.classList.add('show');
+  modalErr.classList.remove('show');
+  modalInput.value = '';
+  setTimeout(() => modalInput.focus(), 120);
+  setTool('select');
+}
+function closeModal() { modalMask.classList.remove('show'); }
+$('#modalCancel').addEventListener('click', closeModal);
+modalMask.addEventListener('click', e => { if (e.target === modalMask) closeModal(); });
+$('#modalOk').addEventListener('click', submitVideo);
+modalInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter') submitVideo();
+  if (e.key === 'Escape') closeModal();
+});
+function submitVideo() {
+  const v = modalInput.value.trim();
+  const info = parseBili(v);
+  if (!info) {
+    modalErr.textContent = '没认出来 — 请粘贴 BV 号或 bilibili.com/video/… 链接（b23.tv 短链需先展开）';
+    modalErr.classList.add('show');
+    modalInput.animate(
+      [{ transform: 'translateX(0)' }, { transform: 'translateX(-6px)' }, { transform: 'translateX(6px)' }, { transform: 'translateX(0)' }],
+      { duration: 260, easing: 'ease-in-out' }
+    );
+    return;
+  }
+  closeModal();
+  const d = addVideo(info, screenToWorld(innerWidth / 2, innerHeight / 2));
+  showToast('已插入视频，点击卡片载入播放器');
+  setTimeout(() => {
+    const dom = domMap.get(d.id);
+    if (dom) { dom.classList.add('appear'); setTimeout(() => dom.classList.remove('appear'), 480); }
+  }, 0);
+}
+
+$('#helpOk').addEventListener('click', () => helpMask.classList.remove('show'));
+helpMask.addEventListener('click', e => { if (e.target === helpMask) helpMask.classList.remove('show'); });
+
+/* ---------------- 工具栏 / 顶栏 ---------------- */
+function setTool(t) {
+  state.tool = t;
+  document.querySelectorAll('.tool[data-tool]').forEach(b => b.classList.toggle('active', b.dataset.tool === t));
+  stage.className = '';
+  stage.classList.add('tool-' + t);
+  if (t !== 'select') clearSelection();
+  if (t === 'erase') stage.classList.add('is-erasing');
+}
+document.querySelectorAll('.tool[data-tool]').forEach(b => {
+  b.addEventListener('click', () => {
+    const t = b.dataset.tool;
+    if (t === 'image') { openImage(); return; }
+    if (t === 'video') { openVideoModal(); return; }
+    setTool(t);
+  });
+});
+
+$('#btnZoomIn').addEventListener('click', () => zoomAnimated(1.3));
+$('#btnZoomOut').addEventListener('click', () => zoomAnimated(1 / 1.3));
+function zoomAnimated(f) {
+  flyTo(state.camera.x, state.camera.y, clamp(state.camera.scale * f, MIN_SCALE, MAX_SCALE), dur(300), EASE_OUT);
+}
+$('#zoomVal').addEventListener('click', () => flyTo(state.camera.x, state.camera.y, 1, dur(380), EASE_OUT));
+$('#btnFit').addEventListener('click', () => fitAll());
+$('#btnHelp').addEventListener('click', () => helpMask.classList.add('show'));
+
+$('#btnTheme').addEventListener('click', () => {
+  const now = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+  document.documentElement.dataset.theme = now;
+  localStorage.setItem('canvas.theme', now);
+  drawMinimap();
+  renderBoardList();
+});
+
+const boardNameEl = $('#boardName');
+boardNameEl.addEventListener('input', () => {
+  board().name = boardNameEl.value || '未命名场景';
+  renderBoardList();
+  markDirty();
+});
+boardNameEl.addEventListener('blur', () => { if (!boardNameEl.value.trim()) { board().name = '未命名场景'; boardNameEl.value = board().name; markDirty(); } });
+boardNameEl.addEventListener('keydown', e => { if (e.key === 'Enter') boardNameEl.blur(); });
+
+/* ---------------- 场景面板 ---------------- */
+function toggleBoards(force) {
+  const hidden = boardsPanel.classList.contains('hidden');
+  const show = force === undefined ? hidden : force;
+  boardsPanel.classList.toggle('hidden', !show);
+  if (show) renderBoardList();
+}
+$('#btnBoards').addEventListener('click', () => toggleBoards());
+$('#btnNewBoard').addEventListener('click', () => {
+  const b = newBoard('场景 ' + (state.boards.length + 1));
+  pushHistory();
+  state.boards.push(b);
+  renderBoardList();
+  switchBoard(b.id);
+});
+
+function renderBoardList() {
+  boardList.innerHTML = '';
+  state.boards.forEach(b => {
+    const card = document.createElement('div');
+    card.className = 'board-card' + (b.id === state.activeId ? ' active' : '');
+    card.dataset.bid = b.id;
+    card.innerHTML = `
+      <div class="bc-grip" title="拖动调整顺序"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.5"/><circle cx="15" cy="6" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="9" cy="18" r="1.5"/><circle cx="15" cy="18" r="1.5"/></svg></div>
+      <div class="thumb"><canvas width="88" height="68"></canvas></div>
+      <div class="bc-t">
+        <div class="bc-n">${escapeHtml(b.name)}</div>
+        <div class="bc-c">${b.elements.length} 个元素</div>
+      </div>
+      <div class="bc-x" title="删除场景"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M6 6l12 12M18 6L6 18"/></svg></div>`;
+    card.addEventListener('click', e => {
+      if (e.target.closest('.bc-x')) {
+        if (state.boards.length === 1) return showToast('至少要保留一个场景');
+        pushHistory();
+        state.boards = state.boards.filter(x => x.id !== b.id);
+        if (state.activeId === b.id) switchBoard(state.boards[0].id);
+        else renderBoardList();
+        markDirty();
+        return;
+      }
+      if (e.target.closest('.bc-grip')) return;   // 拖手柄不触发切换
+      switchBoard(b.id);
+    });
+    boardList.appendChild(card);
+    drawThumb(card.querySelector('canvas'), b);
+    bindSort(boardList, card, card.querySelector('.bc-grip'), () => {
+      const order = [...boardList.children].map(c => c.dataset.bid);
+      pushHistory();
+      state.boards.sort((a, b2) => order.indexOf(a.id) - order.indexOf(b2.id));
+      renderBoardList();
+      markDirty();
+    });
+  });
+}
+
+/* 通用的「按住手柄上下拖动排序」（场景面板与视图面板共用） */
+function bindSort(listEl, card, grip, commit) {
+  if (!grip) return;
+  grip.addEventListener('click', e => e.stopPropagation());
+  grip.addEventListener('pointerdown', e => {
+    e.stopPropagation();
+    e.preventDefault();
+    let startY = e.clientY, moved = false;
+    const move = ev => {
+      const dy = ev.clientY - startY;
+      if (!moved && Math.abs(dy) < 4) return;
+      if (!moved) { moved = true; card.classList.add('sorting'); }
+      card.style.transform = `translateY(${dy}px) scale(1.02)`;
+      const r = card.getBoundingClientRect();
+      const cy = r.top + r.height / 2;
+      const kids = [...listEl.children];
+      const myIdx = kids.indexOf(card);
+      for (const s of kids) {
+        if (s === card) continue;
+        const sr = s.getBoundingClientRect();
+        const mid = sr.top + sr.height / 2;
+        const sIdx = kids.indexOf(s);
+        if (sIdx < myIdx && cy < mid) {
+          listEl.insertBefore(card, s);
+          startY -= (sr.height + 6);
+          break;
+        }
+        if (sIdx > myIdx && cy > mid) {
+          listEl.insertBefore(s, card);
+          startY += (sr.height + 6);
+          break;
+        }
+      }
+    };
+    const up = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', up);
+      if (!moved) return;
+      card.classList.remove('sorting');
+      card.style.transform = '';
+      commit();
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', up);
+  });
+}
+
+function drawThumb(cv, b) {
+  const ctx = cv.getContext('2d');
+  ctx.clearRect(0, 0, cv.width, cv.height);
+  const box = bboxOf(b.elements);
+  if (!box) return;
+  const pad = 8;
+  const sc = Math.min((cv.width - pad * 2) / Math.max(box.w, 1), (cv.height - pad * 2) / Math.max(box.h, 1));
+  const ox = cv.width / 2 - (box.x + box.w / 2) * sc;
+  const oy = cv.height / 2 - (box.y + box.h / 2) * sc;
+  const dark = document.documentElement.dataset.theme === 'dark';
+  b.elements.forEach(e => {
+    const x = e.x * sc + ox, y = e.y * sc + oy;
+    const w = Math.max(2, e.w * sc), h = Math.max(2, e.h * sc);
+    drawThumbShape(ctx, e, x, y, w, h, dark);
+  });
+  ctx.globalAlpha = 1;
+}
+
+/* 场景切换：整体缩放 + 模糊淡出 → 换内容 → 飞入 */
+async function switchBoard(id) {
+  if (boardAnimating || id === state.activeId) { toggleBoards(false); return; }
+  const target = state.boards.find(b => b.id === id);
+  if (!target) return;
+  boardAnimating = true;
+  toggleBoards(false);
+  cancelCamAnim();
+  if (state.editingId) exitEdit();
+  clearSelection();
+  const prev = board();                 // 记住离开时的视图
+  if (prev) prev.camera = { ...state.camera };
+
+  const outDur = state.quality === 'low' ? 120 : 200;
+  const inDur = state.quality === 'low' ? 240 : 420;
+
+  // 1) 淡出（不用 blur：低端机上模糊层会闪、也吃性能）
+  viewport.animate(
+    [
+      { transform: 'scale(1)', opacity: 1 },
+      { transform: 'scale(.965)', opacity: 0 }
+    ],
+    { duration: outDur, easing: 'cubic-bezier(.4,0,1,1)', fill: 'forwards' }
+  );
+
+  await wait(outDur + 60);   // 多留一帧余量，确保完全不可见了再换内容
+
+  // 2) 换数据：相机直接就位（此刻画布是透明的，不做飞行，避免两层缩放叠加产生跳跃）
+  state.activeId = id;
+  renderBoard();
+  boardNameEl.value = target.name;
+  const c = target.camera || { x: 0, y: 0, scale: 1 };
+  state.camera = { x: c.x, y: c.y, scale: clamp(c.scale || 1, MIN_SCALE, MAX_SCALE) };
+  applyCamera();
+  refreshGuides();
+
+  // 3) 淡入（轻微推近）+ 元素错峰弹入 —— 动感交给 stagger，不再叠加相机飞行
+  viewport.animate(
+    [
+      { transform: 'scale(1.025)', opacity: 0 },
+      { transform: 'scale(1)', opacity: 1 }
+    ],
+    { duration: inDur, easing: CSS_IOS, fill: 'forwards' }
+  );
+  staggerIn();
+
+  await wait(inDur);
+  viewport.getAnimations().forEach(a => a.cancel());
+  viewport.style.transform = '';
+  viewport.style.opacity = '';
+  viewport.style.filter = '';
+  boardAnimating = false;
+  markDirty();
+}
+function wait(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+/* 元素错峰弹入（苹果 Keynote「神奇移动」式的层次感） */
+function staggerIn() {
+  if (state.quality === 'low') return;   // 精简模式跳过逐元素弹入
+  const kids = [...world.children].slice(0, 16);
+  kids.forEach((dom, i) => {
+    const delay = 40 + i * 26;
+    dom.classList.add('appear');
+    dom.style.animationDelay = delay + 'ms';
+    setTimeout(() => {
+      dom.classList.remove('appear');
+      dom.style.animationDelay = '';
+    }, delay + 470);
+  });
+}
+
+function updateBoardMeta() {
+  const n = els().length;
+  $('#boardMeta').textContent = n + ' 个元素';
+}
+
+/* 导入 / 导出 / 清空 */
+$('#btnExport').addEventListener('click', () => {
+  const blob = new Blob([JSON.stringify({ v: 1, activeId: state.activeId, boards: state.boards }, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'canvas-' + new Date().toISOString().slice(0, 10) + '.json';
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  showToast('已导出');
+});
+$('#btnImport').addEventListener('click', () => {
+  const inp = document.createElement('input');
+  inp.type = 'file'; inp.accept = '.json,application/json';
+  inp.onchange = () => {
+    const f = inp.files[0];
+    if (!f) return;
+    const fr = new FileReader();
+    fr.onload = () => {
+      try {
+        const d = JSON.parse(fr.result);
+        if (!d.boards || !Array.isArray(d.boards)) throw 0;
+        pushHistory();
+        state.boards = d.boards;
+        state.activeId = d.boards[0].id;
+        renderBoard();
+        boardNameEl.value = board().name;
+        fitAll();
+        renderBoardList();
+        showToast('已导入');
+        markDirty();
+      } catch (e) { showToast('文件格式不对'); }
+    };
+    fr.readAsText(f);
+  };
+  inp.click();
+});
+$('#btnClear').addEventListener('click', () => {
+  if (!els().length) return showToast('当前场景已经是空的');
+  if (!confirm('清空当前场景的所有元素？')) return;
+  pushHistory();
+  board().elements = [];
+  renderBoard();
+  markDirty();
+  showToast('已清空');
+});
+
+/* ---------------- 小地图 ---------------- */
+const mctx = miniCanvas.getContext('2d');
+let miniTimer = null;
+function drawMinimap() {
+  clearTimeout(miniTimer);
+  miniTimer = setTimeout(drawMinimapNow, 90);
+}
+function drawMinimapNow() {
+  const dark = document.documentElement.dataset.theme === 'dark';
+  const list = els();
+  // 统一用 CSS 像素做坐标系：canvas 只做 dpr 放大，
+  // 否则视口框（DOM 元素，按 CSS 像素定位）在高分屏上会错位一倍
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  const cw = minimap.clientWidth || 180, ch = minimap.clientHeight || 122;
+  const pw = Math.round(cw * dpr), ph = Math.round(ch * dpr);
+  if (miniCanvas.width !== pw || miniCanvas.height !== ph) {
+    miniCanvas.width = pw; miniCanvas.height = ph;
+  }
+  mctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  mctx.clearRect(0, 0, cw, ch);
+  const box = bboxOf(list) || { x: -500, y: -400, w: 1000, h: 800 };
+  // 扩展视口范围
+  const vw = innerWidth / state.camera.scale, vh = innerHeight / state.camera.scale;
+  const vbox = {
+    x: Math.min(box.x, state.camera.x), y: Math.min(box.y, state.camera.y),
+    w: Math.max(box.x + box.w, state.camera.x + vw) - Math.min(box.x, state.camera.x),
+    h: Math.max(box.y + box.h, state.camera.y + vh) - Math.min(box.y, state.camera.y),
+  };
+  const pad = 30;
+  const sc = Math.min((cw - pad) / Math.max(vbox.w, 1), (ch - pad) / Math.max(vbox.h, 1));
+  const ox = cw / 2 - (vbox.x + vbox.w / 2) * sc;
+  const oy = ch / 2 - (vbox.y + vbox.h / 2) * sc;
+  minimap._m = { sc, ox, oy };
+
+  list.forEach(e => {
+    const map = { note: '#FFE066', text: dark ? '#f5f5f7' : '#8e8e93', image: '#A9D6FF', video: '#00AEEC', ink: dark ? '#f5f5f7' : '#1d1d1f', link: dark ? '#8e8e93' : '#b9b9c0' };
+    mctx.fillStyle = (e.type === 'note' && ({
+      'c-yellow': '#FFE066', 'c-pink': '#FFAFCC', 'c-blue': '#A9D6FF',
+      'c-green': '#A8E6B8', 'c-purple': '#CDB4FF', 'c-gray': '#DCDCE1'
+    }[e.color])) || map[e.type] || '#c7c7cc';
+    mctx.globalAlpha = e.type === 'text' ? .45 : (e.type === 'link' ? .3 : .85);
+    const x = e.x * sc + ox, y = e.y * sc + oy, w = Math.max(2, e.w * sc), h = Math.max(2, e.h * sc);
+    mctx.beginPath();
+    const r = Math.min(2.5, w / 2, h / 2);
+    if (mctx.roundRect) mctx.roundRect(x, y, w, h, r); else mctx.rect(x, y, w, h);
+    mctx.fill();
+  });
+  mctx.globalAlpha = 1;
+
+  // 视口框
+  const vx = state.camera.x * sc + ox, vy = state.camera.y * sc + oy;
+  const vW = vw * sc, vH = vh * sc;
+  miniVp.style.left = vx + 'px';
+  miniVp.style.top = vy + 'px';
+  miniVp.style.width = vW + 'px';
+  miniVp.style.height = vH + 'px';
+}
+
+minimap.addEventListener('pointerdown', e => {
+  e.stopPropagation();
+  const move = ev => gotoMini(ev);
+  const up = () => {
+    window.removeEventListener('pointermove', move);
+    window.removeEventListener('pointerup', up);
+  };
+  window.addEventListener('pointermove', move);
+  window.addEventListener('pointerup', up);
+  gotoMini(e);
+});
+minimap.addEventListener('click', e => e.stopPropagation());
+function gotoMini(e) {
+  const m = minimap._m;
+  if (!m) return;
+  const r = minimap.getBoundingClientRect();
+  const cx = e.clientX - r.left, cy = e.clientY - r.top;   // 与绘制同用 CSS 像素
+  const wx = (cx - m.ox) / m.sc, wy = (cy - m.oy) / m.sc;
+  cancelCamAnim();
+  state.camera.x = wx - (innerWidth / state.camera.scale) / 2;
+  state.camera.y = wy - (innerHeight / state.camera.scale) / 2;
+  applyCamera();
+  markDirty();
+}
+
+/* 参考线（目前未启用吸附，保留接口） */
+function refreshGuides() { guides.innerHTML = ''; }
+
+/* ---------------- Toast ---------------- */
+let toastTimer = null;
+function showToast(msg) {
+  toast.textContent = msg;
+  toast.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toast.classList.remove('show'), 1900);
+}
+
+/* ---------------- 视图记录 —— 把画布当 PPT 用 ---------------- */
+const viewsDock = $('#viewsDock'), viewsPanel = $('#viewsPanel'), viewsList = $('#viewsList');
+const vdCount = $('#btnToggleViews'), presHint = $('#presHint'), presN = $('#presN');
+
+/* 默认收起：只在左下角留翻页键；需要增删/改名时再展开面板 */
+function toggleViewsPanel(force) {
+  const show = force === undefined ? !viewsPanel.classList.contains('show') : force;
+  viewsPanel.classList.toggle('show', show);
+  vdCount.classList.toggle('on', show);
+}
+
+function thumbColor(e, dark) {
+  if (e.type === 'note') {
+    return {
+      'c-yellow': '#FFE066', 'c-pink': '#FFAFCC', 'c-blue': '#A9D6FF',
+      'c-green': '#A8E6B8', 'c-purple': '#CDB4FF', 'c-gray': '#DCDCE1'
+    }[e.color] || '#FFE066';
+  }
+  return { text: dark ? '#f5f5f7' : '#8e8e93', image: '#A9D6FF', video: '#00AEEC', ink: dark ? '#f5f5f7' : '#1d1d1f', link: dark ? '#8e8e93' : '#b9b9c0' }[e.type] || '#c7c7cc';
+}
+
+/* 缩略图：2 倍分辨率绘制，并且画出内容的样子（便签文字、图片、播放三角…），
+   不然光看一片色块根本认不出是哪个视图 */
+function drawThumbShape(ctx, e, x, y, w, h, dark) {
+  const base = thumbColor(e, dark);
+  const rect = (fill, alpha = .9) => {
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = fill;
+    const r = Math.min(2.5, w / 2, h / 2);
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(x, y, Math.max(1.5, w), Math.max(1.5, h), r);
+    else ctx.rect(x, y, Math.max(1.5, w), Math.max(1.5, h));
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  };
+  if (e.type === 'note') {
+    rect(base, .92);
+    if (h > 11 && w > 13) {                     // 画几道横线示意文字
+      ctx.fillStyle = 'rgba(0,0,0,.24)';
+      const lines = Math.min(4, Math.max(1, Math.floor((h - 6) / 8)));
+      for (let i = 0; i < lines; i++) {
+        const lw = w * (i === lines - 1 ? 0.45 : 0.74);
+        ctx.fillRect(x + w * 0.11, y + 4 + i * 8, Math.max(2, lw), 2);
+      }
+    }
+  } else if (e.type === 'text') {
+    ctx.globalAlpha = .5;
+    ctx.fillStyle = base;
+    ctx.fillRect(x, y + h * 0.3, Math.max(2, w * 0.72), Math.max(2, h * 0.42));
+    ctx.globalAlpha = 1;
+  } else if (e.type === 'image') {
+    rect(base, .85);
+    ctx.fillStyle = 'rgba(255,255,255,.62)';    // 山的形状，一眼看出是图
+    ctx.beginPath();
+    ctx.moveTo(x + w * 0.12, y + h * 0.82);
+    ctx.lineTo(x + w * 0.42, y + h * 0.38);
+    ctx.lineTo(x + w * 0.72, y + h * 0.82);
+    ctx.closePath();
+    ctx.fill();
+  } else if (e.type === 'video') {
+    rect(base, .95);
+    const s = Math.min(w, h);
+    if (s > 9) {                                 // 播放三角
+      ctx.fillStyle = 'rgba(255,255,255,.95)';
+      ctx.beginPath();
+      ctx.moveTo(x + w / 2 - s * 0.11, y + h / 2 - s * 0.17);
+      ctx.lineTo(x + w / 2 + s * 0.17, y + h / 2);
+      ctx.lineTo(x + w / 2 - s * 0.11, y + h / 2 + s * 0.17);
+      ctx.closePath();
+      ctx.fill();
+    }
+  } else if (e.type === 'ink') {
+    ctx.globalAlpha = .55;
+    ctx.strokeStyle = base;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(x, y, Math.max(1.5, w), Math.max(1.5, h));
+    ctx.globalAlpha = 1;
+  } else {
+    rect(base, .3);
+  }
+}
+
+function captureThumb(w = 256, h = 112) {
+  const cv = document.createElement('canvas');
+  cv.width = w; cv.height = h;
+  const ctx = cv.getContext('2d');
+  if (!ctx) return '';
+  const dark = document.documentElement.dataset.theme === 'dark';
+  ctx.fillStyle = dark ? '#1b1c1f' : '#f2f2f6';
+  ctx.fillRect(0, 0, w, h);
+  const vw = innerWidth / state.camera.scale, vh = innerHeight / state.camera.scale;
+  const sx = w / vw, sy = h / vh;
+  for (const e of els()) {
+    const x = (e.x - state.camera.x) * sx, y = (e.y - state.camera.y) * sy;
+    const ew = e.w * sx, eh = e.h * sy;
+    if (x > w || y > h || x + ew < 0 || y + eh < 0) continue;
+    drawThumbShape(ctx, e, x, y, ew, eh, dark);
+  }
+  try { return cv.toDataURL('image/jpeg', 0.72); } catch (err) { return ''; }
+}
+
+function captureView() {
+  const b = board();
+  if (!b.views) b.views = [];
+  const v = addViewNamed('视图 ' + (b.views.length + 1));
+  pushHistory();
+  state.presentIdx = b.views.length - 1;
+  renderViews();
+  renderBoardList();
+  toggleViewsPanel(true);            // 展开看一眼刚记录的缩略图
+  markDirty();
+  showToast(`已记录「${v.name}」`);
+}
+
+function removeView(i) {
+  const b = board();
+  if (!b.views || !b.views[i]) return;
+  pushHistory();
+  b.views.splice(i, 1);
+  if (state.presentIdx >= b.views.length) state.presentIdx = Math.max(0, b.views.length - 1);
+  renderViews();
+  renderBoardList();
+  updatePresHint();
+  markDirty();
+}
+
+function renderViews() {
+  const vs = board().views || [];
+  viewsList.innerHTML = '';
+  vs.forEach((v, i) => {
+    const card = document.createElement('div');
+    card.className = 'view-card' + (i === state.presentIdx ? ' active' : '');
+    card.dataset.vid = v.id;
+    card.innerHTML =
+      `<div class="v-grip" title="拖动调整顺序"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.5"/><circle cx="15" cy="6" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="9" cy="18" r="1.5"/><circle cx="15" cy="18" r="1.5"/></svg></div>` +
+      `<img class="v-thumb" src="${v.thumb || ''}" alt="">` +
+      `<div class="v-n"><b>${i + 1}</b><span title="点一下改名">${escapeHtml(v.name)}</span></div>` +
+      `<div class="v-x" title="删除"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M6 6l12 12M18 6L6 18"/></svg></div>`;
+
+    const nameEl = card.querySelector('.v-n span');
+    // 点名字 → 直接改名（手机上双击很难触发，所以单击就行）
+    nameEl.addEventListener('click', ev => { ev.stopPropagation(); startRenameView(nameEl, v); });
+    nameEl.addEventListener('dblclick', ev => ev.stopPropagation());
+    card.querySelector('.v-x').addEventListener('click', ev => { ev.stopPropagation(); removeView(i); });
+    // 卡片其它地方（缩略图等）→ 跳转
+    card.addEventListener('click', ev => {
+      if (ev.target.closest('.v-x') || ev.target.closest('.v-grip') || ev.target.closest('.v-n span')) return;
+      gotoView(i);
+      toggleViewsPanel(false);        // 跳转后收起，不挡画布
+    });
+    viewsList.appendChild(card);
+    bindSort(viewsList, card, card.querySelector('.v-grip'), () => {
+      const order = [...viewsList.children].map(c => c.dataset.vid);
+      pushHistory();
+      board().views.sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
+      renderViews();
+      markDirty();
+    });
+  });
+  updatePresHint();
+}
+
+function startRenameView(span, v) {
+  if (span.getAttribute('contenteditable') === 'true') return;
+  span.setAttribute('contenteditable', 'true');
+  span.focus();
+  const sel = getSelection();
+  if (sel) sel.selectAllChildren(span);
+  const finish = save => {
+    span.removeAttribute('contenteditable');
+    const t = span.textContent.trim();
+    if (save && t && t !== v.name) { pushHistory(); v.name = t; markDirty(); }
+    renderViews();
+  };
+  span.addEventListener('blur', () => finish(true), { once: true });
+  span.addEventListener('keydown', k => {
+    if (k.key === 'Enter') { k.preventDefault(); span.blur(); }
+    else if (k.key === 'Escape') { span.textContent = v.name; span.blur(); }
+  });
+}
+
+function markActiveView() {
+  [...viewsList.children].forEach((c, i) => c.classList.toggle('active', i === state.presentIdx));
+}
+
+/* 距离远或缩放跨度大 → 走「拉远—推进」的弧线，长距离跳转也不晕 */
+function gotoView(i) {
+  const v = (board().views || [])[i];
+  if (!v) return;
+  state.presentIdx = i;
+  if (state.editingId) exitEdit();
+  clearSelection();
+  const dist = Math.hypot(v.x - state.camera.x, v.y - state.camera.y) * state.camera.scale;
+  const ratio = Math.max(state.camera.scale / v.scale, v.scale / state.camera.scale);
+  // 只有「距离远 + 缩放相近」才走拉远弧线；缩放跨度大时普通飞行更稳（弧线会闪）
+  const arc = dist > innerWidth * 1.1 && ratio < 1.8;
+  const ms = dur(arc ? 1050 : (ratio > 1.8 ? 900 : 780));
+  if (arc) flyToArc(v.x, v.y, v.scale, ms);
+  else flyTo(v.x, v.y, v.scale, ms);
+  markActiveView();
+  updatePresHint();
+}
+
+function nearestView() {
+  const vs = board().views || [];
+  if (!vs.length) return 0;
+  let best = 0, bd = Infinity;
+  vs.forEach((v, i) => {
+    const d = Math.hypot(v.x - state.camera.x, v.y - state.camera.y) * state.camera.scale + Math.abs(Math.log(v.scale / state.camera.scale)) * 600;
+    if (d < bd) { bd = d; best = i; }
+  });
+  return best;
+}
+
+function togglePresent(on) {
+  const want = on === undefined ? !state.presenting : on;
+  const vs = board().views || [];
+  if (want && !vs.length) { showToast('先点 + 记录几个视图，再开始演示'); return; }
+  state.presenting = want;
+  document.body.classList.toggle('presenting', want);
+  $('#btnPlay').classList.toggle('on', want);
+  if (want) {
+    toggleViewsPanel(false);
+    state.presentIdx = nearestView();
+    gotoView(state.presentIdx);
+    showToast('演示中：← → 切换视图，Esc 退出');
+  } else {
+    markActiveView();
+  }
+  updatePresHint();
+}
+function stepView(dir) {
+  const vs = board().views || [];
+  if (!vs.length) return;
+  state.presentIdx = (state.presentIdx + dir + vs.length) % vs.length;
+  gotoView(state.presentIdx);
+}
+function updatePresHint() {
+  const vs = board().views || [];
+  const txt = vs.length ? `${state.presentIdx + 1} / ${vs.length}` : '0 / 0';
+  presN.textContent = txt;
+  vdCount.textContent = txt;
+  vdCount.title = vs.length ? '展开视图列表' : '还没有视图，点这里记录当前画面';
+}
+
+vdCount.addEventListener('click', () => toggleViewsPanel());
+$('#btnPrevView').addEventListener('click', () => stepView(-1));
+$('#btnNextView').addEventListener('click', () => stepView(1));
+$('#btnAddView').addEventListener('click', captureView);
+$('#btnPlay').addEventListener('click', () => togglePresent());
+
+/* 退出键：手机没有 Esc，演示 / 聚焦时靠它回到正常模式 */
+$('#btnExitMode').addEventListener('click', () => {
+  if (state.presenting) togglePresent(false);
+  else if (state.focusId) exitFocus();
+  else setImmersive(false);
+});
+presHint.addEventListener('click', () => { if (state.presenting) togglePresent(false); });
+
+/* 点画布其它地方收起视图面板 */
+stage.addEventListener('pointerdown', () => { if (viewsPanel.classList.contains('show')) toggleViewsPanel(false); });
+
+/* ---------------- 云同步 ----------------
+   数据存在腾讯云 CloudBase（经云函数中转），手机 / 电脑填同一个「空间码」即可互通。
+   空间码相当于一把钥匙：知道它的人才能读写这份画布。 */
+const CLOUD_CFG = 'canvas.cloud';
+const CLOUD_API = 'https://art-d9giyyspp3921f818-1312774719.ap-shanghai.app.tcloudbase.com/sync';
+
+const cloud = {
+  key: '', on: false,
+  lastPush: 0,       // 本地最后一次写入云端的时间
+  cloudTime: 0,      // 云端记录的更新时间
+  busy: false, applying: false,
+};
+let cloudPushTimer = null, cloudPullTimer = null;
+
+function loadCloudCfg() {
+  try { Object.assign(cloud, JSON.parse(localStorage.getItem(CLOUD_CFG) || '{}')); } catch (e) { /* 忽略 */ }
+  cloud.busy = false; cloud.applying = false;
+}
+function saveCloudCfg() {
+  localStorage.setItem(CLOUD_CFG, JSON.stringify({ key: cloud.key, on: cloud.on, lastPush: cloud.lastPush }));
+}
+function ensureCloudTimers() {
+  if (cloudPullTimer) return;
+  cloudPullTimer = setInterval(() => { if (cloud.on) cloudPull(true); }, 20000);
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && cloud.on) cloudPull(true);
+  });
+}
+
+async function cloudConnect(key, quiet) {
+  cloud.key = key;
+  cloud.on = true;
+  saveCloudCfg();
+  ensureCloudTimers();
+  if (!quiet) showToast('云同步已开启');
+  await cloudPull(false);          // 先看看云端有没有内容
+  scheduleCloudPush();             // 再把本机内容推上去
+  cloudMigrateImages();            // 最后把本机旧的 base64 图片也搬到云上
+}
+
+/* data:image/png;base64,xxx → { blob, mime }（上传要用原始字节，不能再套一层 base64） */
+function dataUrlToBlob(dataUrl) {
+  const s = String(dataUrl);
+  const i = s.indexOf(',');
+  if (i < 0) return null;
+  const m = /^data:(image\/[a-z0-9.+-]+);base64$/i.exec(s.slice(0, i));
+  if (!m) return null;
+  let bin;
+  try { bin = atob(s.slice(i + 1)); } catch (e) { return null; }
+  const u8 = new Uint8Array(bin.length);
+  for (let k = 0; k < bin.length; k++) u8[k] = bin.charCodeAt(k);
+  return { blob: new Blob([u8], { type: m[1] }), mime: m[1].toLowerCase() };
+}
+
+/* 图片上传：交给云函数中转，浏览器不接触任何密钥。
+   ⚠️ 必须用二进制请求体：云函数对 application/json 这类「文本类型」请求体只放行 100KB，
+   换成 application/octet-stream 才是 6MB —— 把图片塞进 JSON 会直接 413。
+   成功返回 { id, url }，失败返回 null —— 调用方回落到本地 base64，功能不退化。 */
+async function cloudUploadImage(dataUrl) {
+  if (!cloud.on || !cloud.key || String(dataUrl).indexOf('data:image/') !== 0) return null;
+  const conv = dataUrlToBlob(dataUrl);
+  if (!conv) return null;
+  try {
+    const r = await fetch(
+      CLOUD_API + '?put=' + encodeURIComponent(cloud.key) + '&ct=' + encodeURIComponent(conv.mime),
+      { method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: conv.blob }
+    );
+    const j = await r.json().catch(() => null);
+    return (j && j.ok && j.id && j.url) ? j : null;
+  } catch (e) {
+    console.warn('图片上传失败，回落到本地存储', e);
+    return null;
+  }
+}
+
+/* 把还以 base64 存在本机的旧图片逐张搬到云上，换成短链接。
+   逐张、可中断：中途断网或关掉同步，已完成的部分保留，剩下的维持原样，下次再补。 */
+let imgMigrating = false;
+async function cloudMigrateImages() {
+  if (!cloud.on || !cloud.key || imgMigrating) return;
+  const todo = [];
+  state.boards.forEach(b => b.elements.forEach(e => {
+    if (e.type === 'image' && !e.imgId && typeof e.src === 'string' && e.src.indexOf('data:image/') === 0) todo.push(e);
+  }));
+  if (!todo.length) return;
+  imgMigrating = true;
+  let done = 0;
+  for (const e of todo) {
+    if (!cloud.on) break;
+    const up = await cloudUploadImage(e.src);
+    if (!up) break;                       // 失败就停，不硬撑
+    e.src = up.url;
+    e.imgId = up.id;
+    refreshEl(e);
+    done++;
+  }
+  imgMigrating = false;
+  if (done) { markDirty(); scheduleCloudPush(); showToast(`已把 ${done} 张图片传到云端`); }
+}
+
+function cloudStatus() {
+  if (!cloud.on || !cloud.key) return '未开启';
+  if (cloud.busy) return '同步中…';
+  const t = cloud.lastPush || cloud.cloudTime;
+  if (!t) return '已连接';
+  const d = new Date(t);
+  const p = n => String(n).padStart(2, '0');
+  return `已连接 · 上次同步 ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+/* 云端文档：{ data: {boards, activeId}, updatedAt } */
+function cloudPayload() {
+  const data = { boards: state.boards, activeId: state.activeId, v: 1 };
+  const txt = JSON.stringify(data);
+  if (txt.length <= 2600000) return { data };
+  // 太大就只同步结构（图片留在各设备），避免超出云函数请求体限制
+  const slim = JSON.parse(txt);
+  slim.boards.forEach(b => b.elements.forEach(e => { if (e.type === 'image') e.src = ''; }));
+  return { data: slim };
+}
+
+async function cloudPush() {
+  if (!cloud.on || !cloud.key || cloud.busy || cloud.applying) return;
+  cloud.busy = true;
+  try {
+    const { data } = cloudPayload();
+    const r = await fetch(CLOUD_API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key: cloud.key, data }),
+    });
+    const j = await r.json().catch(() => null);
+    if (j && j.ok) {
+      cloud.lastPush = j.updatedAt || Date.now();
+      cloud.cloudTime = Math.max(cloud.cloudTime, cloud.lastPush);
+      saveCloudCfg();
+    }
+  } catch (e) {
+    console.warn('云同步写入失败', e);
+  } finally {
+    cloud.busy = false;
+    updateCloudUi();
+  }
+}
+
+/* 拉取：云端更新才覆盖本地；图片若云端没有而本机有，则保留本机的 */
+async function cloudPull(silent) {
+  if (!cloud.on || !cloud.key || cloud.busy || cloud.applying) return false;
+  cloud.busy = true;
+  let applied = false;
+  try {
+    const r = await fetch(CLOUD_API + '?key=' + encodeURIComponent(cloud.key), { cache: 'no-store' });
+    const j = await r.json();
+    if (j && j.data && j.updatedAt) {
+      cloud.cloudTime = j.updatedAt;
+      if (j.updatedAt > cloud.lastPush + 1500) {
+        const localSrc = new Map();
+        state.boards.forEach(b => b.elements.forEach(e => { if (e.type === 'image' && e.src) localSrc.set(e.id, e.src); }));
+        state.boards = j.data.boards || state.boards;
+        state.boards.forEach(b => b.elements.forEach(e => {
+          if (e.type === 'image' && !e.src && localSrc.has(e.id)) e.src = localSrc.get(e.id);
+        }));
+        if (j.data.activeId && state.boards.some(b => b.id === j.data.activeId)) {
+          state.activeId = j.data.activeId;
+        }
+        cloud.applying = true;
+        renderBoard();
+        boardNameEl.value = board().name;
+        applyCamera();
+        lastSnapshot = snapshot();
+        cloud.applying = false;
+        cloud.lastPush = j.updatedAt;
+        saveCloudCfg();
+        applied = true;
+        if (!silent) showToast('已从云端载入最新内容');
+      }
+    }
+  } catch (e) {
+    console.warn('云同步读取失败', e);
+  } finally {
+    cloud.busy = false;
+    updateCloudUi();
+  }
+  return applied;
+}
+
+function scheduleCloudPush() {
+  if (!cloud.on || !cloud.key || cloud.applying) return;
+  clearTimeout(cloudPushTimer);
+  cloudPushTimer = setTimeout(() => cloudPush(), 2200);
+}
+
+$('#btnCloud').addEventListener('click', () => {
+  $('#cloudKey').value = cloud.key || '';
+  $('#cloudErr').classList.remove('show');
+  $('#cloudMask').classList.add('show');
+  updateCloudUi();
+});
+$('#cloudCancel').addEventListener('click', () => $('#cloudMask').classList.remove('show'));
+$('#cloudOk').addEventListener('click', async () => {
+  const key = $('#cloudKey').value.trim();
+  const err = $('#cloudErr');
+  if (!key) { err.textContent = '请填一个空间码'; err.classList.add('show'); return; }
+  if (!/^[A-Za-z0-9_-]{3,64}$/.test(key)) {
+    err.textContent = '空间码至少 3 位，只能用字母、数字、- 和 _';
+    err.classList.add('show');
+    return;
+  }
+  err.textContent = '正在连接…';
+  err.classList.add('show');
+  try {
+    await cloudConnect(key);
+    $('#cloudMask').classList.remove('show');
+    err.classList.remove('show');
+  } catch (e) {
+    err.textContent = (e && e.message) ? e.message : '连接失败';
+    console.warn('云同步连接失败', e);
+  }
+  updateCloudUi();
+});
+$('#cloudOff').addEventListener('click', () => {
+  cloud.on = false;
+  saveCloudCfg();
+  updateCloudUi();
+  showToast('已关闭云同步');
+});
+
+function updateCloudUi() {
+  const btn = $('#btnCloud');
+  if (!btn) return;
+  btn.textContent = cloud.on ? '云同步 · 开' : '云同步';
+  btn.title = cloudStatus();
+}
+
+/* ---------------- 动效质量档位 ---------------- */
+function setQuality(q) {
+  state.quality = q;
+  document.body.classList.toggle('q-low', q === 'low');
+  localStorage.setItem('canvas.quality', q);
+  const label = { auto: '自动', high: '全部', low: '精简' }[q] || '自动';
+  const p = $('#btnPerfPanel');
+  if (p) p.textContent = '动效：' + label;
+}
+$('#btnPerf').addEventListener('click', () => {
+  const order = ['auto', 'high', 'low'];
+  const next = order[(order.indexOf(state.quality) + 1) % 3];
+  setQuality(next);
+  showToast({ auto: '动效：自动（按帧率调节）', high: '动效：全部开启', low: '动效：精简模式（更流畅）' }[next]);
+});
+/* 竖屏手机上顶栏的 ⚡ 是隐藏的，场景面板里再给一个入口 */
+$('#btnPerfPanel').addEventListener('click', () => $('#btnPerf').click());
+
+let fpsFrames = 0, fpsAt = 0, fpsAvg = 60, autoDegraded = false;
+function fpsLoop(now) {
+  if (!fpsAt) fpsAt = now;
+  fpsFrames++;
+  if (now - fpsAt >= 1000) {
+    const fps = fpsFrames * 1000 / (now - fpsAt);
+    fpsAvg = fpsAvg * 0.35 + fps * 0.65;
+    fpsFrames = 0; fpsAt = now;
+    if (state.quality === 'auto' && !autoDegraded && fpsAvg < 38) {
+      autoDegraded = true;
+      setQuality('low');
+      showToast('检测到掉帧，已切到精简动效以保证流畅');
+    }
+  }
+  requestAnimationFrame(fpsLoop);
+}
+
+/* ---------------- 启动 ---------------- */
+function addViewNamed(name) {
+  const b = board();
+  if (!b.views) b.views = [];
+  const v = {
+    id: uid(), name,
+    x: state.camera.x, y: state.camera.y, scale: state.camera.scale,
+    thumb: captureThumb(),
+  };
+  b.views.push(v);
+  return v;
+}
+
+function boot() {
+  const savedTheme = localStorage.getItem('canvas.theme');
+  if (savedTheme) document.documentElement.dataset.theme = savedTheme;
+  const q = localStorage.getItem('canvas.quality');
+  setQuality(q === 'high' || q === 'low' ? q : 'auto');
+  load();
+  boardNameEl.value = board().name;
+  renderBoard();
+  setTool('select');
+  applyCamera();
+
+  if (state.fresh) {
+    fitAll(0);
+    applyCamera();
+    addViewNamed('总览');
+    const vd = els().find(e => e.type === 'video');
+    if (vd) {
+      const sc = clamp(Math.min(innerWidth * 0.62 / vd.w, innerHeight * 0.68 / vd.h), 0.2, 2);
+      state.camera.x = vd.x + vd.w / 2 - innerWidth / 2 / sc;
+      state.camera.y = vd.y + vd.h / 2 - innerHeight / 2 / sc;
+      state.camera.scale = sc;
+      applyCamera();
+      addViewNamed('视频特写');
+      const v0 = board().views[0];
+      state.camera.x = v0.x; state.camera.y = v0.y; state.camera.scale = v0.scale;
+      applyCamera();
+    }
+    renderViews();
+    markDirty();
+  }
+
+  lastSnapshot = snapshot();
+  requestAnimationFrame(fpsLoop);
+  if (!localStorage.getItem('canvas.seen')) {
+    localStorage.setItem('canvas.seen', '1');
+    setTimeout(() => helpMask.classList.add('show'), 500);
+  }
+  window.addEventListener('resize', () => { applyCamera(); drawMinimap(); });
+  window.addEventListener('beforeunload', () => { try { save(); } catch (e) { } });
+
+  // 云同步：填过空间码就自动连上；定时拉取 + 切回前台时拉一次
+  loadCloudCfg();
+  updateCloudUi();
+  if (cloud.on && cloud.key) {
+    cloudConnect(cloud.key, true).catch(() => { cloud.on = false; saveCloudCfg(); updateCloudUi(); });
+  }
+}
+
+/* 编辑时同步文本（轻量级，避免频繁入栈） */
+world.addEventListener('input', e => {
+  const t = e.target.closest('.txt');
+  if (!t) return;
+  const dom = t.closest('.el');
+  const d = findEl(dom.dataset.id);
+  if (d) { d.text = t.textContent; markDirty(); }
+});
+world.addEventListener('focusout', e => {
+  const t = e.target.closest && e.target.closest('.txt');
+  if (t && state.editingId === t.closest('.el').dataset.id) exitEdit();
+});
+
+/* 点击空白（单击）清除选择 —— 由 marquee end 处理 */
+
+boot();

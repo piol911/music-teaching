@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Canvas · 无边画布</title>
+<link rel="stylesheet" href="styles.css?v=1789836755">
+</head>
+<body>
+
+<div id="stage">
+  <div id="grid"></div>
+  <div id="viewport">
+    <div id="world"></div>
+  </div>
+  <div id="marquee"></div>
+  <svg id="guides" xmlns="http://www.w3.org/2000/svg"></svg>
+</div>
+
+<!-- ============ 顶栏 ============ -->
+<header class="topbar glass">
+  <button class="btn icon" id="btnBoards" title="场景 (⌘⇧B)">
+    <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></svg>
+  </button>
+
+  <div class="board-title-wrap">
+    <input id="boardName" class="board-name" value="未命名场景" spellcheck="false">
+    <span class="board-meta" id="boardMeta">0 个元素</span>
+  </div>
+
+  <div class="spacer"></div>
+
+  <div class="zoom-pill">
+    <button class="btn icon sm" id="btnZoomOut" title="缩小">
+      <svg viewBox="0 0 24 24"><path d="M5 12h14"/></svg>
+    </button>
+    <button class="zoom-val" id="zoomVal" title="重置为 100%">100%</button>
+    <button class="btn icon sm" id="btnZoomIn" title="放大">
+      <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+    </button>
+    <span class="divider"></span>
+    <button class="btn icon sm" id="btnFit" title="适应全部 (1)">
+      <svg viewBox="0 0 24 24"><path d="M4 9V5a1 1 0 011-1h4M20 9V5a1 1 0 00-1-1h-4M4 15v4a1 1 0 001 1h4M20 15v4a1 1 0 01-1 1h-4"/></svg>
+    </button>
+  </div>
+
+  <div class="spacer"></div>
+
+  <button class="btn icon" id="btnPerf" title="动效质量">
+    <svg viewBox="0 0 24 24"><path d="M13 2L4.5 13.5H11l-1 8.5 8.5-11.5H12z"/></svg>
+  </button>
+  <button class="btn icon" id="btnTheme" title="深色 / 浅色">
+    <svg viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z"/></svg>
+  </button>
+  <button class="btn icon" id="btnHelp" title="快捷键">
+    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 114 2c-.8.6-1.5 1-1.5 2"/><circle cx="12" cy="17" r=".6" fill="currentColor"/></svg>
+  </button>
+  <div class="save-state" id="saveState">已保存</div>
+</header>
+
+<!-- ============ 视图 Dock：默认收在左下角，只留翻页键 ============ -->
+<div class="views-dock glass" id="viewsDock">
+  <button class="vd-nav" id="btnPrevView" title="上一个视图 (←)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 6l-6 6 6 6"/></svg>
+  </button>
+  <button class="vd-count" id="btnToggleViews" title="展开视图列表">0/0</button>
+  <button class="vd-nav" id="btnNextView" title="下一个视图 (→)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 6l6 6-6 6"/></svg>
+  </button>
+  <span class="vd-div"></span>
+  <button class="vd-play" id="btnPlay" title="演示 (⌘⇧P)">
+    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.5v13l11-6.5z"/></svg>
+  </button>
+  <button class="vd-exit" id="btnExitMode" title="退出演示 / 聚焦">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+  </button>
+</div>
+
+<!-- 展开后才是完整的视图列表（管理用） -->
+<div class="views-panel glass" id="viewsPanel">
+  <div class="vp-head">
+    <span>视图</span>
+    <button class="btn icon sm" id="btnAddView" title="记录当前视图 (⌘⇧R)">
+      <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+    </button>
+  </div>
+  <div class="vp-list" id="viewsList"></div>
+</div>
+
+<!-- 拖动时的对齐参考线 -->
+<div class="guides" id="guides"><div class="gv" id="gv"></div><div class="gh" id="gh"></div></div>
+
+<!-- ============ 底部工具栏 ============ -->
+<div class="toolbar glass" id="toolbar">
+  <button class="tool active" data-tool="select" title="选择 (V)">
+    <svg viewBox="0 0 24 24"><path d="M5 3l14 8-6 1.5L10 19z"/></svg>
+  </button>
+  <button class="tool" data-tool="pan" title="平移 (H / 按住空格)">
+    <svg viewBox="0 0 24 24"><path d="M9 11V5.5a1.5 1.5 0 013 0V11m0-1V4.5a1.5 1.5 0 013 0V11m0-1.5a1.5 1.5 0 013 0V15a6 6 0 01-6 6h-1a6 6 0 01-6-6v-3.5a1.5 1.5 0 013 0V13"/></svg>
+  </button>
+  <span class="tb-div"></span>
+  <button class="tool" data-tool="note" title="便签 (N)">
+    <svg viewBox="0 0 24 24"><path d="M5 4h14v10l-5 5H5z"/><path d="M19 14h-5v5"/></svg>
+  </button>
+  <button class="tool" data-tool="text" title="文本 (T)">
+    <svg viewBox="0 0 24 24"><path d="M5 6h14M12 6v13"/></svg>
+  </button>
+  <button class="tool" data-tool="image" title="图片 (I)">
+    <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="8.5" cy="9.5" r="1.6"/><path d="M21 16l-5-5-6 7"/></svg>
+  </button>
+  <button class="tool" data-tool="video" title="B 站视频 (B)">
+    <svg viewBox="0 0 24 24"><rect x="2.5" y="5" width="19" height="14" rx="3.5"/><path d="M10.5 9.5l5 2.5-5 2.5z" fill="currentColor" stroke="none"/></svg>
+  </button>
+  <button class="tool" data-tool="link" title="连接线 (L)">
+    <svg viewBox="0 0 24 24"><path d="M6 18L18 6"/><circle cx="6" cy="18" r="2.4"/><circle cx="18" cy="6" r="2.4"/></svg>
+  </button>
+  <button class="tool" data-tool="ink" title="画笔 (P)">
+    <svg viewBox="0 0 24 24"><path d="M4 20c3-1 4-8 8-8s3 5 6 4"/><path d="M15.5 4.5l4 4"/></svg>
+  </button>
+  <span class="tb-div"></span>
+  <button class="tool" id="btnErase" data-tool="erase" title="橡皮 (E)">
+    <svg viewBox="0 0 24 24"><path d="M8 20H5l-2-2 10-10 7 7-5 5z"/><path d="M9 11l7 7"/></svg>
+  </button>
+</div>
+
+<!-- ============ 场景抽屉 ============ -->
+<aside class="boards-panel glass hidden" id="boardsPanel">
+  <div class="bp-head">
+    <span>场景</span>
+    <button class="btn icon sm" id="btnNewBoard" title="新建场景">
+      <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+    </button>
+  </div>
+  <div class="bp-list" id="boardList"></div>
+  <div class="bp-foot">
+    <button class="btn text" id="btnCloud" title="手机电脑自动同步">云同步</button>
+    <button class="btn text" id="btnPerfPanel" title="卡顿时切到精简">动效：自动</button>
+    <button class="btn text" id="btnImport">导入</button>
+    <button class="btn text" id="btnExport">导出</button>
+    <button class="btn text danger" id="btnClear">清空</button>
+  </div>
+</aside>
+
+<!-- ============ 小地图 ============ -->
+<div class="minimap glass" id="minimap">
+  <canvas id="miniCanvas" width="360" height="244"></canvas>
+  <div class="mini-vp" id="miniVp"></div>
+</div>
+
+<!-- ============ 选中浮动工具条 ============ -->
+<div class="ctxbar glass" id="ctxbar"></div>
+
+<!-- ============ 弹窗：插入视频 ============ -->
+<div class="modal-mask" id="modalMask">
+  <div class="modal glass" id="modal">
+    <h3 id="modalTitle">插入 B 站视频</h3>
+    <p class="modal-sub">粘贴视频链接或 BV 号，例如<br><code>https://www.bilibili.com/video/BV1GJ411x7h7</code></p>
+    <input id="modalInput" class="modal-input" placeholder="BV1GJ411x7h7 或完整链接" spellcheck="false">
+    <div class="modal-err" id="modalErr"></div>
+    <div class="modal-actions">
+      <button class="btn text" id="modalCancel">取消</button>
+      <button class="btn primary" id="modalOk">插入</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 帮助 ============ -->
+<div class="modal-mask" id="helpMask">
+  <div class="modal glass wide" id="helpModal">
+    <h3>操作方式</h3>
+    <div class="help-grid">
+      <div><kbd>空格</kbd> / <kbd>中键</kbd> / <kbd>右键</kbd> 拖拽</div><span>平移画布（三种都行）</span>
+      <div><kbd>滚轮</kbd></div><span>以光标为中心缩放</span>
+      <div><kbd>⌘</kbd> + 滚轮 / 捏合</div><span>精细缩放</span>
+      <div><kbd>双击</kbd> 元素</div><span>聚焦 / 编辑</span>
+      <div><kbd>双击</kbd> 空白</div><span>退出聚焦</span>
+      <div><kbd>1</kbd></div><span>适应全部</span>
+      <div><kbd>V</kbd> <kbd>H</kbd> <kbd>N</kbd> <kbd>T</kbd></div><span>选择 / 平移 / 便签 / 文本</span>
+      <div><kbd>I</kbd> <kbd>B</kbd> <kbd>P</kbd> <kbd>E</kbd></div><span>图片 / 视频 / 画笔 / 橡皮</span>
+      <div><kbd>⌘C</kbd> <kbd>⌘V</kbd> <kbd>⌘D</kbd></div><span>复制 / 粘贴 / 再制</span>
+      <div><kbd>⌘Z</kbd> <kbd>⌘⇧Z</kbd></div><span>撤销 / 重做</span>
+      <div><kbd>L</kbd></div><span>连线工具（也可拖元素上的圆点）</span>
+      <div><kbd>Tab</kbd> / <kbd>Enter</kbd></div><span>加子节点 / 加同级节点（自动连线对齐）</span>
+      <div>拖动元素</div><span>接近其它元素时自动吸附对齐，按 <kbd>⌘</kbd> 可临时关掉</span>
+      <div><kbd>⌘</kbd> <kbd>+</kbd> / <kbd>-</kbd></div><span>调节选中文字的字号</span>
+      <div><kbd>⌘⇧R</kbd></div><span>记录当前视图</span>
+      <div><kbd>⌘⇧P</kbd></div><span>演示：按视图顺序播放</span>
+      <div><kbd>←</kbd> <kbd>→</kbd></div><span>上一个 / 下一个视图</span>
+      <div><kbd>⌘⇧B</kbd></div><span>场景面板</span>
+      <div>拖拽文件</div><span>直接置入图片</span>
+    </div>
+    <div class="modal-actions">
+      <button class="btn primary" id="helpOk">知道了</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 云同步 ============ -->
+<div class="modal-mask" id="cloudMask">
+  <div class="modal glass">
+    <h3>云同步</h3>
+    <p class="modal-sub">起一个<b>空间码</b>（当成一把钥匙），手机和电脑填<b>同一个</b>，画布内容就会自动互通。</p>
+    <input class="modal-input" id="cloudKey" placeholder="空间码，例如 lxy-canvas-2026" autocomplete="off">
+    <p class="modal-sub" style="margin:12px 0 0">
+      · 改动后几秒内自动上传，打开页面 / 切回前台自动检查更新<br>
+      · 空间码请起得随机一点，知道它的人才能读写这份画布<br>
+      · <b>图片也会同步</b>：新导入的图自动存到云端，本地已存的旧图会逐张搬上去（不用手动操作）
+    </p>
+    <div class="modal-err" id="cloudErr"></div>
+    <div class="modal-actions">
+      <button class="btn text danger" id="cloudOff">关闭同步</button>
+      <button class="btn text" id="cloudCancel">取消</button>
+      <button class="btn primary" id="cloudOk">保存并连接</button>
+    </div>
+  </div>
+</div>
+
+<div class="pres-hint" id="presHint">
+  <span class="n" id="presN">1 / 1</span>
+  <span>‹ › 切换视图</span>
+  <span class="quit">点击退出 ✕</span>
+</div>
+<div class="toast" id="toast"></div>
+<div class="drop-hint" id="dropHint">松手即可置入</div>
+
+<input type="file" id="fileInput" accept="image/*" multiple hidden>
+
+<script src="app.js?v=1789836755"></script>
+</body>
+</html>
