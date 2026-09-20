@@ -90,6 +90,7 @@
     gap: 14px;
     padding-bottom: clamp(40px, 9vh, 88px);
   }
+  .hd-acts { display: flex; align-items: center; gap: 10px; }
   .mark {
     font-family: var(--serif);
     font-size: 12.5px;
@@ -390,6 +391,120 @@
     .del { top: calc((100% - 21px) / 2); }
   }
 
+  /* ================= 图形密码 ================= */
+  .lock {
+    position: fixed; inset: 0; z-index: 30;
+    display: none;
+    flex-direction: column; align-items: center; justify-content: center;
+    gap: clamp(20px, 4vh, 34px);
+    padding: 32px 24px calc(32px + env(safe-area-inset-bottom));
+    background: var(--bg);
+    overflow-y: auto;
+  }
+  .lock.on { display: flex; }
+  .lock.is-setup .l-setup { display: block; }
+  .lock.is-check .l-check { display: block; }
+
+  .lock-hd { text-align: center; }
+  .lock-hd .t {
+    font-family: var(--serif);
+    font-size: clamp(24px, 6vw, 32px);
+    letter-spacing: .06em;
+  }
+  .lock-hd .s {
+    margin-top: 10px;
+    font-size: 12.5px; line-height: 1.8;
+    color: var(--ink-2);
+  }
+  .lock-hd .s.warn { color: var(--accent); }
+
+  .marks {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: clamp(10px, 2.6vw, 16px);
+    width: 100%;
+    max-width: 306px;
+    list-style: none; margin: 0; padding: 0;
+  }
+  .mark-t {
+    position: relative;
+    aspect-ratio: 1;
+    display: grid; place-items: center;
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    background: none;
+    color: var(--ink-2);
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    transition: border-color .35s var(--ease), color .35s var(--ease),
+                background-color .35s var(--ease), transform .35s var(--ease);
+  }
+  .mark-t svg { width: 46%; height: 46%; }
+  .mark-t:hover { border-color: var(--line-2); color: var(--ink); }
+  .mark-t[aria-pressed="true"] {
+    color: var(--accent);
+    border-color: var(--accent);
+    background: var(--wash);
+  }
+  .mark-t .ord {
+    position: absolute; top: 5px; right: 7px;
+    font-family: Georgia, serif;
+    font-size: 10px;
+    color: var(--accent);
+  }
+  .mark-t:active { transform: scale(.94); }
+
+  .seq {
+    display: flex; gap: 9px;
+    min-height: 8px;
+  }
+  .seq i {
+    width: 6px; height: 6px;
+    border: 1px solid var(--accent);
+    border-radius: 50%;
+    transition: background-color .3s var(--ease), opacity .3s var(--ease);
+  }
+  .seq i.on { background: var(--accent); }
+
+  .lock-acts {
+    display: flex; gap: 20px; flex-wrap: wrap; justify-content: center;
+    font-size: 12px; letter-spacing: .08em;
+  }
+  .lock-acts button {
+    appearance: none; border: 0; background: none;
+    font: inherit; font-size: 12px; letter-spacing: .1em;
+    color: var(--ink-3); cursor: pointer;
+    padding: 4px 0;
+    transition: color .3s var(--ease);
+  }
+  .lock-acts button:hover { color: var(--accent); }
+  .lock-acts button[disabled] { opacity: .35; cursor: default; }
+  .l-setup, .l-check { display: none; }
+  .l-setup.on, .l-check.on { display: block; }
+
+  .shake { animation: shake .42s var(--ease); }
+  @keyframes shake {
+    0%, 100% { transform: none; }
+    18% { transform: translateX(-9px); }
+    42% { transform: translateX(7px); }
+    68% { transform: translateX(-4px); }
+  }
+
+  /* 编辑模式下才出现的密码管理入口 */
+  .lockBtn {
+    display: none;
+    appearance: none;
+    padding: 7px 16px;
+    border: 1px dashed var(--line-2);
+    border-radius: 100px;
+    background: none;
+    font: inherit; font-size: 11px; letter-spacing: .18em;
+    color: var(--ink-2); cursor: pointer;
+    transition: color .35s var(--ease), border-color .35s var(--ease);
+  }
+  .lockBtn:hover { color: var(--accent); border-color: var(--accent); }
+  body.editing .lockBtn { display: inline-block; }
+
   /* ================= 弹层 ================= */
   .mask {
     position: fixed; inset: 0; z-index: 10;
@@ -467,10 +582,24 @@
 <body>
 <div class="ambient"></div>
 
+<!-- 图形密码：按顺序点击符号解锁 -->
+<div class="lock" id="lock" role="dialog" aria-modal="true" aria-labelledby="lockTitle">
+  <div class="lock-hd">
+    <div class="t" id="lockTitle">我的网页</div>
+    <p class="s" id="lockMsg">按顺序点击符号</p>
+  </div>
+  <ul class="marks" id="marks"></ul>
+  <div class="seq" id="seq" aria-hidden="true"></div>
+  <div class="lock-acts" id="lockActs"></div>
+</div>
+
 <div class="wrap">
   <header class="masthead">
     <span class="mark">XY<i>.</i>6300</span>
-    <button class="edit" id="editBtn" aria-pressed="false">编辑</button>
+    <span class="hd-acts">
+      <button class="lockBtn" id="lockMgr">图案密码</button>
+      <button class="edit" id="editBtn" aria-pressed="false">编辑</button>
+    </span>
   </header>
 
   <div class="head">
@@ -533,6 +662,19 @@
     <div class="acts">
       <button id="codeCancel">取消</button>
       <button class="primary" id="codeOk">确定</button>
+    </div>
+  </div>
+</div>
+
+<!-- 找回图案密码：空间码对得上就清除 -->
+<div class="mask" id="maskReset">
+  <div class="sheet">
+    <h2>忘记顺序了</h2>
+    <p class="hint">填你自己的<b>空间码</b>验证一下，对得上就清除图案密码，之后可以重新设置。</p>
+    <label class="field"><span>空间码</span><input id="fUnlock" placeholder="当初填的那个" autocomplete="off"></label>
+    <div class="acts">
+      <button id="resetCancel">取消</button>
+      <button class="primary" id="resetOk">确定</button>
     </div>
   </div>
 </div>
@@ -613,6 +755,10 @@ async function pull() {
       links = j.data.links;
       render();
     }
+    if (j && j.data && ('lock' in j.data)) {   // 明确写了 null 才算「取消密码」
+      lockCfg = j.data.lock || null;
+      saveLockLocal();
+    }
   } catch (e) { /* 离线时就用默认/本地这份，不打扰 */ }
 }
 
@@ -622,7 +768,7 @@ async function push() {
     const r = await fetch(CLOUD_API, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ key: recKey(), data: { v: 1, links } })
+      body: JSON.stringify({ key: recKey(), data: { v: 1, links, lock: lockCfg } })
     });
     const j = await r.json();
     return !!(j && j.ok);
@@ -717,6 +863,199 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Escape') document.querySelectorAll('.mask.on').forEach(m => m.classList.remove('on'));
 });
 
+/* ============================================================
+   图形密码：按顺序点击符号解锁
+   ⚠️ 这是「帘子」不是「保险柜」——验证逻辑在网页里，源文件谁都能看。
+      它解决的是「手机递给别人时不至于一眼看光」，不是真正的加密。
+   ============================================================ */
+const LOCK_LS = 'xy6300.portal.lock';
+const UNLOCK_SS = 'xy6300.portal.unlocked';
+
+const MARKS = [
+  '<circle cx="8.5" cy="16.5" r="3.2"/><path d="M11.7 16.5V6.5l7-2.6v9"/><path d="M18.7 12.9c-1.4.6-2.8.5-4-.4"/>',
+  '<circle cx="12" cy="12" r="7.5"/>',
+  '<path d="M12 5l7 13H5z"/>',
+  '<rect x="5.5" y="5.5" width="13" height="13"/>',
+  '<path d="M3 12c2.2-3.4 4.4-3.4 6.6 0s4.4 3.4 6.6 0 4.4-3.4 4.8-2.6"/>',
+  '<path d="M12 3.5c1.2 5.2 1.2 8.8 0 17-1.2-8.2-1.2-11.8 0-17z"/><path d="M3.5 12c5.2-1.2 8.8-1.2 17 0-8.2 1.2-11.8 1.2-17 0z"/>',
+  '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3.4"/>',
+  '<path d="M6 6l12 12M18 6L6 18"/>',
+  '<path d="M15.8 4.2a8.2 8.2 0 1 0 0 15.6 10 10 0 0 1 0-15.6z"/>',
+  '<path d="M12 3.5s6 6.6 6 10.5a6 6 0 0 1-12 0C6 10.1 12 3.5 12 3.5z"/>',
+  '<path d="M4.5 19.5C4.5 11 11 6 19.5 6c0 8.5-6.5 13.5-15 13.5z"/><path d="M4.5 19.5C9 15 13.5 12 19.5 10.4"/>',
+  '<path d="M9 3v18M15 3v18M3 9h18M3 15h18"/>'
+];
+
+let lockCfg = null;      // { h, len, salt }，null = 没设密码
+let chain = [];          // 当前点下的顺序
+let stage = 'check';     // check | manage | new | confirm
+let firstSeq = null;     // 设置时第一次点的顺序
+
+try { const raw = localStorage.getItem(LOCK_LS); if (raw) lockCfg = JSON.parse(raw); } catch (e) { /* 忽略 */ }
+
+/* 顺序 → 摘要。用纯 JS 实现而不用 crypto.subtle：后者要求 https，http 下会取不到 */
+function digest(seq, salt) {
+  const s = seq.join(',') + '|' + salt;
+  let a = 0x811c9dc5, b = 0x5f3a1c07;
+  for (let i = 0; i < s.length; i++) {
+    a = Math.imul(a ^ s.charCodeAt(i), 0x01000193) >>> 0;
+    b = (Math.imul(b, 0x21) + s.charCodeAt(i) * (i + 7)) >>> 0;
+  }
+  return a.toString(36) + '-' + b.toString(36);
+}
+const saltOf = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+
+function saveLockLocal() {
+  try {
+    if (lockCfg) localStorage.setItem(LOCK_LS, JSON.stringify(lockCfg));
+    else localStorage.removeItem(LOCK_LS);
+  } catch (e) { /* 忽略 */ }
+}
+
+const lockEl = $('#lock');
+const svg = inner => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3"
+  stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${inner}</svg>`;
+
+function buildMarks() {
+  $('#marks').innerHTML = MARKS.map((m, i) =>
+    `<li><button class="mark-t" data-i="${i}" aria-pressed="false" aria-label="符号 ${i + 1}">${svg(m)}</button></li>`
+  ).join('');
+}
+
+function drawSeq() {
+  const n = stage === 'check' ? Math.max(chain.length, 3) : Math.max(chain.length, 3);
+  $('#seq').innerHTML = Array.from({ length: n }, (_, i) => `<i class="${i < chain.length ? 'on' : ''}"></i>`).join('');
+}
+
+function setMsg(t, warn) {
+  const m = $('#lockMsg');
+  m.textContent = t;
+  m.className = 's' + (warn ? ' warn' : '');
+}
+
+function drawBtns() {
+  const a = $('#lockActs');
+  const dis = chain.length < 3 ? ' disabled' : '';
+  if (stage === 'check')      a.innerHTML = '<button data-act="clear">清除重来</button><button data-act="forgot">忘记顺序</button>';
+  else if (stage === 'manage') a.innerHTML = '<button data-act="chg">换个顺序</button><button data-act="off">取消密码</button><button data-act="close">关闭</button>';
+  else if (stage === 'new')    a.innerHTML = `<button data-act="newok"${dis}>下一步</button><button data-act="close">取消</button>`;
+  else if (stage === 'confirm')a.innerHTML = '<button data-act="close">取消</button>';
+}
+
+function refresh() {
+  drawSeq(); drawBtns();
+  document.querySelectorAll('.mark-t').forEach(b => {
+    const k = chain.indexOf(+b.dataset.i);
+    b.setAttribute('aria-pressed', k >= 0 ? 'true' : 'false');
+    let o = b.querySelector('.ord');
+    if (k >= 0) {
+      if (!o) b.insertAdjacentHTML('beforeend', '<span class="ord"></span>'), o = b.querySelector('.ord');
+      o.textContent = k + 1;
+    } else if (o) o.remove();
+  });
+}
+
+function openLock(s, msg) {
+  stage = s; chain = []; firstSeq = null;
+  lockEl.classList.add('on');
+  document.body.style.overflow = 'hidden';
+  $('#lockTitle').textContent = s === 'check' ? '我的网页' : '图案密码';
+  setMsg(msg);
+  refresh();
+}
+function closeLock() {
+  lockEl.classList.remove('on');
+  document.body.style.overflow = '';
+  chain = []; firstSeq = null;
+  try { sessionStorage.setItem(UNLOCK_SS, '1'); } catch (e) { /* 忽略 */ }
+}
+
+function fail(msg) {
+  setMsg(msg || '顺序不对，再试一次', true);
+  lockEl.classList.add('shake');
+  setTimeout(() => lockEl.classList.remove('shake'), 460);
+  setTimeout(() => {
+    if (stage === 'check') { chain = []; setMsg('按顺序点击符号解锁'); refresh(); }
+  }, 620);
+}
+
+function tap(i) {
+  if (stage === 'manage') return;
+  if (chain.includes(i)) { chain = chain.filter(x => x !== i); refresh(); return; }
+  chain.push(i);
+  refresh();
+
+  if (stage === 'check') {
+    if (lockCfg && digest(chain, lockCfg.salt) === lockCfg.h) {
+      setMsg('好');
+      setTimeout(closeLock, 280);
+    } else if (lockCfg && chain.length >= lockCfg.len) {
+      fail();
+    }
+  } else if (stage === 'confirm') {
+    if (chain.length >= firstSeq.length) {
+      if (chain.join(',') === firstSeq.join(',')) commit();
+      else fail('两次不一样，重新来');
+    }
+  }
+}
+
+function commit() {
+  const salt = saltOf();
+  lockCfg = { h: digest(chain, salt), len: chain.length, salt };
+  saveLockLocal();
+  setMsg('正在保存…');
+  push().then(ok => {
+    if (!code) { closeLock(); toast('已设置，仅这台设备有效（填了空间码才会同步）'); return; }
+    closeLock();
+    toast(ok ? '图案密码已更新' : '本机已保存，云端没写到，检查网络');
+  });
+}
+
+function clearLock(cb) {
+  lockCfg = null;
+  saveLockLocal();
+  push().then(() => { if (cb) cb(); });
+}
+
+$('#marks').addEventListener('click', e => {
+  const b = e.target.closest('.mark-t');
+  if (b) tap(+b.dataset.i);
+});
+
+$('#lockActs').addEventListener('click', e => {
+  const b = e.target.closest('button');
+  if (!b || b.disabled) return;
+  const act = b.dataset.act;
+  if (act === 'clear')  { chain = []; setMsg('按顺序点击符号解锁'); refresh(); }
+  if (act === 'forgot') { $('#fUnlock').value = ''; openMask('#maskReset'); setTimeout(() => $('#fUnlock').focus(), 400); }
+  if (act === 'close')  { closeLock(); }
+  if (act === 'chg')    { openLock('new', '点 3～8 个符号，记住顺序'); }
+  if (act === 'newok' && chain.length >= 3) {
+    firstSeq = chain.slice();
+    stage = 'confirm'; chain = [];
+    setMsg('再点一次同样的顺序');
+    refresh();
+  }
+  if (act === 'off') {
+    clearLock(() => { closeLock(); toast('图案密码已取消'); });
+  }
+});
+
+$('#resetOk').addEventListener('click', () => {
+  const v = $('#fUnlock').value.trim();
+  if (!code) { toast('这台设备没填过空间码，找回不了'); return; }
+  if (v !== code) { toast('空间码不对'); return; }
+  closeMask('#maskReset');
+  clearLock(() => { closeLock(); toast('已清除，可以重新设置'); });
+});
+$('#resetCancel').addEventListener('click', () => closeMask('#maskReset'));
+
+$('#lockMgr').addEventListener('click', () => {
+  openLock(lockCfg ? 'manage' : 'new',
+           lockCfg ? '已开启。可以换顺序或取消。' : '点 3～8 个符号，记住顺序');
+});
+
 /* ---------------- 时钟 ---------------- */
 function tick() {
   const d = new Date();
@@ -728,7 +1067,13 @@ tick();
 setInterval(tick, 20000);
 
 /* ---------------- 启动 ---------------- */
+buildMarks();
 render();
+(function bootLock() {
+  let unlocked = false;
+  try { unlocked = sessionStorage.getItem(UNLOCK_SS) === '1'; } catch (e) { /* 忽略 */ }
+  if (lockCfg && !unlocked) openLock('check', '按顺序点击符号解锁');
+})();
 if (code) pull();     // 有空间码就拉一次云端列表
 </script>
 </body>
