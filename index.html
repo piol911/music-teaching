@@ -3,338 +3,547 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#f6f7f9">
-<title>xy6300 · 我的网页</title>
+<meta name="theme-color" content="#faf9f7">
+<title>我的网页</title>
 <!--
-  ============================================================
-  这是 www.xy6300.cc 的门户页。
-  加新网页只需要改下面 <script> 里的 SITES 数组，别的都不用动。
-  ============================================================
+  www.xy6300.cc 的门户页
+  链接列表存在云端（复用画布的云函数），所以手机上加了，电脑上也能看到。
+  页面上点右上角「编辑」即可增删，不需要改代码。
 -->
 <style>
   :root {
-    --bg: #f5f6f8;
-    --bg-glow-1: rgba(120, 160, 255, .16);
-    --bg-glow-2: rgba(255, 190, 140, .14);
-    --card: #ffffff;
-    --card-hover: #ffffff;
-    --text: #1c1c1e;
-    --text-2: #6b6b73;
-    --text-3: #9a9aa3;
-    --line: rgba(0, 0, 0, .07);
-    --line-strong: rgba(0, 0, 0, .12);
-    --shadow: 0 1px 2px rgba(16, 24, 40, .04), 0 8px 24px -12px rgba(16, 24, 40, .14);
-    --shadow-hover: 0 2px 4px rgba(16, 24, 40, .05), 0 18px 40px -16px rgba(16, 24, 40, .22);
-    --r: 18px;
+    --bg: #faf9f7;
+    --ink: #16150f;
+    --ink-2: #6f6c62;
+    --ink-3: #a8a49a;
+    --line: rgba(22, 21, 15, .11);
+    --line-2: rgba(22, 21, 15, .22);
+    --accent: #8a6a3b;
+    --serif: "Songti SC", "STSong", "Noto Serif SC", "Source Han Serif SC", Georgia, "Times New Roman", serif;
+    --sans: -apple-system, BlinkMacSystemFont, "SF Pro SC", "PingFang SC", "Helvetica Neue", "Microsoft YaHei", sans-serif;
   }
   @media (prefers-color-scheme: dark) {
     :root {
-      --bg: #16171a;
-      --bg-glow-1: rgba(80, 120, 220, .20);
-      --bg-glow-2: rgba(200, 130, 80, .14);
-      --card: #202126;
-      --card-hover: #24252b;
-      --text: #f2f2f5;
-      --text-2: #a0a0aa;
-      --text-3: #74747e;
-      --line: rgba(255, 255, 255, .08);
-      --line-strong: rgba(255, 255, 255, .14);
-      --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 8px 24px -12px rgba(0, 0, 0, .6);
-      --shadow-hover: 0 2px 4px rgba(0, 0, 0, .35), 0 18px 40px -16px rgba(0, 0, 0, .7);
+      --bg: #100f0d;
+      --ink: #eceae4;
+      --ink-2: #96938a;
+      --ink-3: #6b6862;
+      --line: rgba(236, 234, 228, .13);
+      --line-2: rgba(236, 234, 228, .26);
+      --accent: #c9a06a;
     }
   }
 
   * { box-sizing: border-box; }
-  html, body { margin: 0; padding: 0; }
+  html { -webkit-text-size-adjust: 100%; }
   body {
+    margin: 0;
     min-height: 100vh;
     background: var(--bg);
-    color: var(--text);
-    font-family: -apple-system, BlinkMacSystemFont, "SF Pro SC", "PingFang SC",
-                 "Helvetica Neue", "Microsoft YaHei", sans-serif;
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 15px;
+    line-height: 1.6;
     -webkit-font-smoothing: antialiased;
-    -webkit-text-size-adjust: 100%;
-    overflow-x: hidden;
+    font-synthesis: none;
   }
-  /* 背景两团柔光，纯装饰 */
-  body::before, body::after {
+  /* 极淡的纸纹，只有凑近才看得出 */
+  body::after {
     content: "";
-    position: fixed;
-    border-radius: 50%;
-    filter: blur(80px);
-    pointer-events: none;
-    z-index: 0;
+    position: fixed; inset: 0;
+    pointer-events: none; z-index: 0;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='.05'/%3E%3C/svg%3E");
   }
-  body::before { width: 520px; height: 520px; left: -180px; top: -200px; background: var(--bg-glow-1); }
-  body::after  { width: 460px; height: 460px; right: -160px; top: 30vh;  background: var(--bg-glow-2); }
 
   .wrap {
-    position: relative;
-    z-index: 1;
-    max-width: 940px;
+    position: relative; z-index: 1;
+    max-width: 560px;
     margin: 0 auto;
-    padding: 0 20px calc(48px + env(safe-area-inset-bottom));
+    padding: clamp(56px, 13vh, 120px) 26px calc(64px + env(safe-area-inset-bottom));
   }
 
   /* ---------- 头部 ---------- */
-  header { padding: 56px 0 30px; }
-  .brand {
-    display: inline-flex;
-    align-items: center;
-    gap: 9px;
-    font-size: 13px;
-    font-weight: 600;
-    letter-spacing: .04em;
-    color: var(--text-3);
+  .top {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 16px;
+  }
+  .kicker {
+    font-size: 10.5px;
+    letter-spacing: .22em;
     text-transform: uppercase;
+    color: var(--ink-3);
   }
-  .brand .dot {
-    width: 7px; height: 7px; border-radius: 50%;
-    background: linear-gradient(135deg, #5b8cff, #a97bff);
-    box-shadow: 0 0 0 3px rgba(91, 140, 255, .16);
+  .edit {
+    appearance: none;
+    border: 0; background: none; padding: 0;
+    font: inherit;
+    font-size: 11px;
+    letter-spacing: .16em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    cursor: pointer;
+    border-bottom: 1px solid transparent;
+    transition: color .3s, border-color .3s;
   }
+  .edit:hover { color: var(--ink); border-bottom-color: var(--line-2); }
+
   h1 {
-    margin: 14px 0 8px;
-    font-size: clamp(26px, 6vw, 38px);
-    line-height: 1.2;
-    letter-spacing: -.02em;
-    font-weight: 700;
+    margin: 26px 0 0;
+    font-family: var(--serif);
+    font-weight: 400;
+    font-size: clamp(31px, 8.5vw, 44px);
+    line-height: 1.18;
+    letter-spacing: .01em;
   }
-  .sub { margin: 0; color: var(--text-2); font-size: 15px; line-height: 1.6; }
-
-  /* ---------- 卡片网格 ---------- */
-  .grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(268px, 1fr));
-    gap: 14px;
-    margin-top: 30px;
-  }
-  @media (max-width: 620px) {
-    .grid { grid-template-columns: 1fr; gap: 12px; margin-top: 24px; }
-    header { padding: 40px 0 22px; }
+  .lede {
+    margin: 16px 0 0;
+    font-size: 13.5px;
+    line-height: 1.85;
+    color: var(--ink-2);
+    max-width: 30em;
   }
 
-  .card {
-    position: relative;
-    display: block;
-    padding: 18px;
-    border-radius: var(--r);
-    background: var(--card);
-    border: 1px solid var(--line);
-    box-shadow: var(--shadow);
+  /* ---------- 列表 ---------- */
+  .rule {
+    height: 1px; background: var(--line);
+    margin: 42px 0 0;
+    transform-origin: left;
+    animation: draw .9s cubic-bezier(.22,1,.36,1) both;
+  }
+  @keyframes draw { from { transform: scaleX(0); } to { transform: none; } }
+
+  ol.list { list-style: none; margin: 0; padding: 0; }
+  li { border-bottom: 1px solid var(--line); }
+
+  .row {
+    display: flex;
+    align-items: flex-start;
+    gap: 18px;
+    padding: 21px 0;
     text-decoration: none;
     color: inherit;
-    overflow: hidden;
     -webkit-tap-highlight-color: transparent;
-    transition: transform .28s cubic-bezier(.22,1,.36,1),
-                box-shadow .28s cubic-bezier(.22,1,.36,1),
-                border-color .2s, background .2s;
-    animation: in .5s cubic-bezier(.22,1,.36,1) both;
+    animation: rise .7s cubic-bezier(.22,1,.36,1) both;
     animation-delay: var(--d, 0ms);
   }
-  @keyframes in {
-    from { opacity: 0; transform: translateY(14px) scale(.985); }
-    to   { opacity: 1; transform: none; }
+  @keyframes rise { from { opacity: 0; transform: translateY(9px); } to { opacity: 1; transform: none; } }
+
+  .idx {
+    flex: none;
+    width: 22px;
+    padding-top: 5px;
+    font-size: 10.5px;
+    letter-spacing: .06em;
+    font-variant-numeric: tabular-nums;
+    color: var(--ink-3);
+  }
+  .body { flex: 1; min-width: 0; }
+  .name {
+    display: block;
+    font-family: var(--serif);
+    font-size: 19.5px;
+    line-height: 1.4;
+    letter-spacing: .01em;
+    transition: transform .42s cubic-bezier(.22,1,.36,1), color .3s;
+  }
+  .desc {
+    display: block;
+    margin-top: 5px;
+    font-size: 12.5px;
+    line-height: 1.7;
+    color: var(--ink-2);
+  }
+  .arrow {
+    flex: none;
+    padding-top: 4px;
+    font-size: 15px;
+    color: var(--ink-3);
+    opacity: 0;
+    transform: translateX(-6px);
+    transition: opacity .42s cubic-bezier(.22,1,.36,1), transform .42s cubic-bezier(.22,1,.36,1);
   }
   @media (hover: hover) {
-    .card:hover {
-      transform: translateY(-3px);
-      box-shadow: var(--shadow-hover);
-      border-color: var(--line-strong);
-      background: var(--card-hover);
-    }
-    .card:hover .go { opacity: 1; transform: none; }
-    .card:hover .icon { transform: scale(1.06) rotate(-3deg); }
+    .row:hover .name { transform: translateX(4px); }
+    .row:hover .arrow { opacity: 1; transform: none; }
+    .row:hover .idx { color: var(--accent); }
   }
-  .card:active { transform: scale(.985); }
+  .row:active .name { transform: scale(.99); }
+  @media (hover: none) {
+    .arrow { opacity: .5; transform: none; }
+  }
 
-  .top { display: flex; align-items: center; gap: 13px; }
-  .icon {
+  .empty {
+    padding: 34px 0;
+    color: var(--ink-3);
+    font-size: 13px;
+  }
+
+  /* ---------- 编辑态 ---------- */
+  .del {
+    display: none;
     flex: none;
-    width: 44px; height: 44px;
-    border-radius: 13px;
-    display: grid; place-items: center;
-    color: #fff;
-    background: linear-gradient(140deg, var(--a1), var(--a2));
-    box-shadow: 0 6px 16px -6px var(--a1);
-    transition: transform .35s cubic-bezier(.22,1,.36,1);
+    margin-top: 2px;
+    width: 28px; height: 28px;
+    border: 1px solid var(--line);
+    border-radius: 50%;
+    background: none;
+    color: var(--ink-3);
+    font: inherit; font-size: 15px; line-height: 1;
+    cursor: pointer;
+    transition: color .25s, border-color .25s, background .25s;
   }
-  .icon svg { width: 22px; height: 22px; display: block; }
+  .del:hover { color: #c0392b; border-color: #c0392b; }
+  body.editing .del { display: grid; place-items: center; }
+  body.editing .arrow { display: none; }
+  body.editing .row { cursor: default; }
 
-  .name { font-size: 16.5px; font-weight: 650; letter-spacing: -.01em; }
-  .desc {
-    margin: 12px 0 0;
-    font-size: 13.5px;
-    line-height: 1.6;
-    color: var(--text-2);
+  .add, .reset {
+    display: none;
+    width: 100%;
+    padding: 17px 0;
+    border: 0; background: none;
+    font: inherit; font-size: 12.5px;
+    letter-spacing: .1em;
+    color: var(--ink-3);
+    cursor: pointer;
+    text-align: left;
+    transition: color .25s;
   }
-  .tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 13px; }
-  .tag {
-    font-size: 11.5px;
-    padding: 3px 9px;
-    border-radius: 999px;
-    color: var(--text-2);
-    background: color-mix(in srgb, var(--a1) 10%, transparent);
-    border: 1px solid color-mix(in srgb, var(--a1) 22%, transparent);
-  }
-  @supports not (background: color-mix(in srgb, red 10%, transparent)) {
-    .tag { background: var(--bg); border-color: var(--line); }
-  }
-
-  .go {
-    position: absolute;
-    top: 18px; right: 16px;
-    color: var(--text-3);
-    opacity: .45;
-    transform: translateX(-3px);
-    transition: opacity .25s, transform .25s;
-  }
-  .go svg { width: 17px; height: 17px; display: block; }
-
-  /* 备用入口（同一项目有多个地址时） */
-  .alt {
-    margin-top: 11px;
-    padding-top: 11px;
-    border-top: 1px dashed var(--line);
-    font-size: 12px;
-    color: var(--text-3);
-    display: flex;
-    align-items: center;
-    gap: 6px;
-  }
-  .alt a { color: var(--text-2); text-decoration: none; border-bottom: 1px solid var(--line-strong); }
-  .alt a:hover { color: var(--text); }
+  .add:hover, .reset:hover { color: var(--accent); }
+  body.editing .add { display: block; }
+  body.editing .reset { display: block; }
+  .reset { font-size: 11.5px; text-align: right; padding-top: 4px; }
 
   /* ---------- 底部 ---------- */
   footer {
-    margin-top: 42px;
-    padding-top: 20px;
-    border-top: 1px solid var(--line);
+    margin-top: 46px;
     display: flex;
-    flex-wrap: wrap;
-    gap: 8px 14px;
-    align-items: center;
     justify-content: space-between;
-    font-size: 12.5px;
-    color: var(--text-3);
+    gap: 12px;
+    font-size: 10.5px;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--ink-3);
   }
-  footer a { color: var(--text-3); text-decoration: none; }
-  footer a:hover { color: var(--text-2); }
+
+  /* ---------- 弹层 ---------- */
+  .mask {
+    position: fixed; inset: 0; z-index: 10;
+    background: color-mix(in srgb, var(--bg) 72%, transparent);
+    -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+    display: flex; align-items: flex-end; justify-content: center;
+    opacity: 0; pointer-events: none;
+    transition: opacity .34s cubic-bezier(.22,1,.36,1);
+  }
+  @media (min-width: 560px) { .mask { align-items: center; } }
+  .mask.on { opacity: 1; pointer-events: auto; }
+  @supports not (background: color-mix(in srgb, red 10%, transparent)) {
+    .mask { background: var(--bg); }
+  }
+
+  .sheet {
+    width: 100%; max-width: 460px;
+    background: var(--bg);
+    border-top: 1px solid var(--line-2);
+    padding: 30px 26px calc(30px + env(safe-area-inset-bottom));
+    transform: translateY(18px);
+    transition: transform .42s cubic-bezier(.22,1,.36,1);
+  }
+  @media (min-width: 560px) {
+    .sheet { border: 1px solid var(--line-2); }
+  }
+  .mask.on .sheet { transform: none; }
+
+  .sheet h2 {
+    margin: 0 0 4px;
+    font-family: var(--serif);
+    font-weight: 400;
+    font-size: 20px;
+  }
+  .sheet p.hint {
+    margin: 0 0 22px;
+    font-size: 12px;
+    line-height: 1.7;
+    color: var(--ink-2);
+  }
+  .field { display: block; margin-bottom: 16px; }
+  .field span {
+    display: block;
+    font-size: 10.5px;
+    letter-spacing: .16em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    margin-bottom: 7px;
+  }
+  .field input {
+    width: 100%;
+    padding: 9px 0;
+    border: 0;
+    border-bottom: 1px solid var(--line-2);
+    border-radius: 0;
+    background: none;
+    color: var(--ink);
+    font: inherit;
+    font-size: 15px;
+    outline: none;
+    transition: border-color .3s;
+    -webkit-appearance: none;
+  }
+  .field input:focus { border-bottom-color: var(--accent); }
+  .field input::placeholder { color: var(--ink-3); }
+
+  .acts { display: flex; gap: 22px; justify-content: flex-end; margin-top: 26px; }
+  .acts button {
+    appearance: none; border: 0; background: none;
+    font: inherit; font-size: 12.5px; letter-spacing: .1em;
+    cursor: pointer; padding: 4px 0;
+    color: var(--ink-2);
+    border-bottom: 1px solid transparent;
+    transition: color .25s, border-color .25s;
+  }
+  .acts button:hover { color: var(--ink); }
+  .acts .primary { color: var(--ink); border-bottom-color: var(--line-2); }
+  .acts .primary:hover { border-bottom-color: var(--accent); color: var(--accent); }
+
+  .toast {
+    position: fixed; left: 50%; bottom: calc(28px + env(safe-area-inset-bottom));
+    transform: translate(-50%, 12px);
+    z-index: 20;
+    padding: 9px 18px;
+    border: 1px solid var(--line-2);
+    background: var(--bg);
+    font-size: 12.5px;
+    color: var(--ink);
+    opacity: 0; pointer-events: none;
+    transition: opacity .3s, transform .3s cubic-bezier(.22,1,.36,1);
+  }
+  .toast.on { opacity: 1; transform: translate(-50%, 0); }
 </style>
 </head>
 <body>
 <div class="wrap">
-  <header>
-    <div class="brand"><span class="dot"></span>xy6300.cc</div>
-    <h1>我的网页</h1>
-    <p class="sub">几个自己写的小东西，点开就能用。</p>
-  </header>
+  <div class="top">
+    <span class="kicker">xy6300.cc</span>
+    <button class="edit" id="editBtn">编辑</button>
+  </div>
 
-  <div class="grid" id="grid"></div>
+  <h1>我的网页</h1>
+  <p class="lede">几个自己写的小东西。点标题打开。</p>
+
+  <div class="rule"></div>
+  <ol class="list" id="list"></ol>
+  <button class="add" id="addBtn">+ 添加一项</button>
+  <button class="reset" id="resetBtn">恢复默认列表</button>
 
   <footer>
-    <span>© <span id="yr"></span> xy6300.cc</span>
-    <span>托管于 GitHub Pages</span>
+    <span id="state">—</span>
+    <span>GitHub Pages</span>
   </footer>
 </div>
 
+<!-- 添加 / 编辑一项 -->
+<div class="mask" id="maskAdd">
+  <div class="sheet">
+    <h2>添加一项</h2>
+    <p class="hint">地址可以填站内相对路径（如 <code>canvas/</code>），也可以填完整网址。</p>
+    <label class="field"><span>名称</span><input id="fName" placeholder="我的新页面" autocomplete="off"></label>
+    <label class="field"><span>地址</span><input id="fHref" placeholder="canvas/ 或 https://…" autocomplete="off" inputmode="url"></label>
+    <label class="field"><span>说明（可留空）</span><input id="fDesc" placeholder="一句话" autocomplete="off"></label>
+    <div class="acts">
+      <button id="addCancel">取消</button>
+      <button class="primary" id="addSave">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- 输入空间码 -->
+<div class="mask" id="maskCode">
+  <div class="sheet">
+    <h2>开启编辑</h2>
+    <p class="hint">
+      链接列表存在云端，这样手机上加的，电脑上也能看到。<br>
+      填一个只有你知道的<b>空间码</b>即可（可以和画布用同一个，数据会自动分开存放）。
+    </p>
+    <label class="field"><span>空间码</span><input id="fCode" placeholder="例如 lxy-2026" autocomplete="off"></label>
+    <div class="acts">
+      <button id="codeCancel">取消</button>
+      <button class="primary" id="codeOk">确定</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
 <script>
 /* ============================================================
-   要加一个新网页？照着往下面数组里加一项就行。
-     name  标题
-     desc  一句话说明
-     href  主地址（可以是站内相对路径，如 "canvas/"）
-     icon  图标名，目前有：canvas / music / image / note / chart / globe / code
-     a1,a2 图标渐变的两个颜色
-     tags  小标签（可省略）
-     alt   备用入口：{ text: '备用地址', href: '...' }（可省略）
+   链接列表：默认写在下面，改过之后就存到云端（同一台设备记住空间码）
    ============================================================ */
-const ICONS = {
-  canvas: '<path d="M3 5.5A1.5 1.5 0 014.5 4h15A1.5 1.5 0 0121 5.5v13a1.5 1.5 0 01-1.5 1.5h-15A1.5 1.5 0 013 18.5z"/><path d="M8 15.5l2.8-3.4 2.4 2.4 2-2.2L21 16"/>',
-  music: '<circle cx="7" cy="18" r="2.6"/><circle cx="18.5" cy="15.5" r="2.6"/><path d="M9.6 18V6.4l11.5-2.6v11.7"/>',
-  image: '<rect x="3" y="4.5" width="18" height="15" rx="2.5"/><circle cx="8.5" cy="10" r="1.6"/><path d="M4 17.5l4.6-4.4 3.4 3.2 2.8-2.6L20 17.6"/>',
-  note: '<path d="M5 3.5h9.5L19 8v12.5H5z"/><path d="M14 3.5V8h5"/><path d="M8.5 12.5h7M8.5 16h4.5"/>',
-  chart: '<path d="M4 20V9M10 20V4M16 20v-7M22 20H2"/>',
-  globe: '<circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.4 2.4 3.6 5.3 3.6 8.5S14.4 18.1 12 20.5c-2.4-2.4-3.6-5.3-3.6-8.5S9.6 5.9 12 3.5z"/>',
-  code: '<path d="M8.5 8L4.5 12l4 4M15.5 8l4 4-4 4"/>'
-};
+const CLOUD_API = 'https://art-d9giyyspp3921f818-1312774719.ap-shanghai.app.tcloudbase.com/sync';
+const CODE_LS = 'xy6300.portal.code';
 
-const SITES = [
-  {
-    name: '无边画布',
-    desc: '无限画布：便签、图片、连线、思维导图、视图演示。手机上也能双指缩放。',
-    href: 'canvas/',
-    icon: 'canvas',
-    a1: '#5b8cff', a2: '#8f6bff',
-    tags: ['画布', '思维导图', '演示'],
-    alt: {
-      text: '备用地址',
-      href: 'https://13192eab73474b56b21f1f637c7376e2.app.workbuddy.host'
-    }
-  },
-  {
-    name: '音乐教学演示台',
-    desc: '课程单元管理，内容与图片存在阿里云 OSS 上，可随时增删。',
-    href: 'music/',
-    icon: 'music',
-    a1: '#ff8a5b', a2: '#ff5b8c',
-    tags: ['教学', 'OSS 存储']
-  },
-  {
-    name: '音乐教学演示台 · 课堂版',
-    desc: '面向课堂演示的另一版界面：进入课堂 / 教师管理入口。',
-    href: 'https://piol911.github.io/art/',
-    icon: 'music',
-    a1: '#ffb340', a2: '#ff7a45',
-    tags: ['教学']
-  },
-  {
-    name: '我的小站',
-    desc: '自我介绍页，带一个 B 站视频。',
-    href: 'https://piol911.github.io/me/',
-    icon: 'globe',
-    a1: '#3fc6a0', a2: '#2f9fe0',
-    tags: ['个人主页']
-  },
-  {
-    name: '我的小站 · 简版',
-    desc: '早期的极简版本，只有一段欢迎文字。',
-    href: 'https://piol911.github.io/XY/',
-    icon: 'note',
-    a1: '#9a8cff', a2: '#c86bff',
-    tags: ['个人主页']
-  }
+const DEFAULTS = [
+  { name: '无边画布',     desc: '无限画布 · 便签 / 图片 / 连线 / 思维导图 / 视图演示', href: 'canvas/' },
+  { name: '音乐教学演示台', desc: '课程单元管理 · 内容存在阿里云 OSS',                 href: 'music/' },
+  { name: '我的小站',     desc: '自我介绍页，带一个 B 站视频',                       href: 'https://piol911.github.io/me/' },
+  { name: '我的小站 · 简版', desc: '早期的极简版本，只有一段欢迎文字',                href: 'https://piol911.github.io/XY/' }
 ];
 
-const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+let links = DEFAULTS.slice();
+let code = '';
+let editing = false;
+try { code = localStorage.getItem(CODE_LS) || ''; } catch (e) { /* 无痕模式等 */ }
 
-document.getElementById('grid').innerHTML = SITES.map((s, i) => {
-  const alt = s.alt
-    ? `<div class="alt">${esc(s.alt.text)}：<a href="${esc(s.alt.href)}" onclick="event.stopPropagation()">打开 ›</a></div>`
-    : '';
-  const tags = (s.tags || []).map(t => `<span class="tag">${esc(t)}</span>`).join('');
-  return `
-  <a class="card" href="${esc(s.href)}" style="--a1:${s.a1};--a2:${s.a2};--d:${i * 60}ms">
-    <span class="go" aria-hidden="true">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M7 17L17 7M9 7h8v8"/>
-      </svg>
-    </span>
-    <div class="top">
-      <span class="icon" aria-hidden="true">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
-          ${ICONS[s.icon] || ICONS.globe}
-        </svg>
-      </span>
-      <span class="name">${esc(s.name)}</span>
-    </div>
-    <p class="desc">${esc(s.desc)}</p>
-    ${tags ? `<div class="tags">${tags}</div>` : ''}
-    ${alt}
-  </a>`;
-}).join('');
+const $ = s => document.querySelector(s);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const two = n => String(n + 1).padStart(2, '0');
 
-document.getElementById('yr').textContent = new Date().getFullYear();
+/* ---------------- 渲染 ---------------- */
+function render() {
+  const list = $('#list');
+  if (!links.length) {
+    list.innerHTML = '<li class="empty">还没有内容。点右上角「编辑」→「+ 添加一项」。</li>';
+  } else {
+    list.innerHTML = links.map((it, i) => `
+      <li>
+        <a class="row" href="${esc(it.href)}" style="--d:${Math.min(i, 12) * 55}ms">
+          <span class="idx">${two(i)}</span>
+          <span class="body">
+            <span class="name">${esc(it.name)}</span>
+            ${it.desc ? `<span class="desc">${esc(it.desc)}</span>` : ''}
+          </span>
+          <span class="arrow" aria-hidden="true">&#8594;</span>
+        </a>
+        <button class="del" data-i="${i}" title="删除" aria-label="删除">&#215;</button>
+      </li>`).join('');
+  }
+  list.querySelectorAll('.del').forEach(btn => {
+    btn.addEventListener('click', ev => { ev.preventDefault(); removeAt(+btn.dataset.i); });
+  });
+  $('#state').textContent = code ? (editing ? '编辑中' : '已同步') : '本地';
+}
+
+function toast(msg) {
+  const t = $('#toast');
+  t.textContent = msg;
+  t.classList.add('on');
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => t.classList.remove('on'), 2200);
+}
+
+/* ---------------- 云端读写 ---------------- */
+const recKey = () => code + '--portal';      // 和画布的数据分开存，互不覆盖
+
+async function pull() {
+  if (!code) return;
+  try {
+    const r = await fetch(CLOUD_API + '?key=' + encodeURIComponent(recKey()), { cache: 'no-store' });
+    const j = await r.json();
+    if (j && j.data && Array.isArray(j.data.links)) {
+      links = j.data.links;
+      render();
+    }
+  } catch (e) { /* 离线时就用默认/本地这份，不打扰 */ }
+}
+
+async function push() {
+  if (!code) return false;
+  try {
+    const r = await fetch(CLOUD_API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key: recKey(), data: { v: 1, links } })
+    });
+    const j = await r.json();
+    return !!(j && j.ok);
+  } catch (e) { return false; }
+}
+
+async function save(msg) {
+  const ok = await push();
+  $('#state').textContent = editing ? '编辑中' : '已同步';
+  toast(ok ? (msg || '已保存') : '保存失败，检查网络后重试');
+}
+
+/* ---------------- 增删 ---------------- */
+function removeAt(i) {
+  const it = links[i];
+  if (!it) return;
+  links.splice(i, 1);
+  render();
+  save('已删除「' + it.name + '」');
+}
+
+/* ---------------- 弹层 ---------------- */
+function openMask(id) { $(id).classList.add('on'); }
+function closeMask(id) { $(id).classList.remove('on'); }
+
+$('#editBtn').addEventListener('click', () => {
+  if (editing) {
+    editing = false;
+    document.body.classList.remove('editing');
+    $('#editBtn').textContent = '编辑';
+    $('#state').textContent = '已同步';
+    return;
+  }
+  if (!code) { $('#fCode').value = ''; openMask('#maskCode'); setTimeout(() => $('#fCode').focus(), 350); return; }
+  editing = true;
+  document.body.classList.add('editing');
+  $('#editBtn').textContent = '完成';
+  $('#state').textContent = '编辑中';
+});
+
+$('#codeOk').addEventListener('click', async () => {
+  const v = $('#fCode').value.trim();
+  if (!/^[A-Za-z0-9_-]{3,64}$/.test(v)) { toast('空间码至少 3 位，只能用字母、数字、- 和 _'); return; }
+  code = v;
+  try { localStorage.setItem(CODE_LS, code); } catch (e) { /* 忽略 */ }
+  closeMask('#maskCode');
+  await pull();
+  editing = true;
+  document.body.classList.add('editing');
+  $('#editBtn').textContent = '完成';
+  toast('已开启编辑');
+});
+$('#codeCancel').addEventListener('click', () => closeMask('#maskCode'));
+
+$('#addBtn').addEventListener('click', () => {
+  $('#fName').value = ''; $('#fHref').value = ''; $('#fDesc').value = '';
+  openMask('#maskAdd');
+  setTimeout(() => $('#fName').focus(), 350);
+});
+$('#addCancel').addEventListener('click', () => closeMask('#maskAdd'));
+$('#addSave').addEventListener('click', () => {
+  const name = $('#fName').value.trim();
+  let href = $('#fHref').value.trim();
+  const desc = $('#fDesc').value.trim();
+  if (!name) { toast('给个名称吧'); return; }
+  if (!href) { toast('还没填地址'); return; }
+  // 看起来不是网址也不是相对路径的话，补上 https://
+  if (!/^(https?:|\/|\.)/.test(href) && !href.includes('/')) href = 'https://' + href + '/';
+  links.push({ name, href, desc });
+  closeMask('#maskAdd');
+  render();
+  save('已添加「' + name + '」');
+});
+
+$('#resetBtn').addEventListener('click', () => {
+  links = DEFAULTS.slice();
+  render();
+  save('已恢复默认列表');
+});
+
+document.querySelectorAll('.mask').forEach(m => {
+  m.addEventListener('click', e => { if (e.target === m) m.classList.remove('on'); });
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') document.querySelectorAll('.mask.on').forEach(m => m.classList.remove('on'));
+});
+
+/* ---------------- 启动 ---------------- */
+render();
+if (code) pull();     // 有空间码就拉一次云端列表
 </script>
 </body>
 </html>
