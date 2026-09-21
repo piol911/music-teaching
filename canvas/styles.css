@@ -1260,3 +1260,51 @@ html[data-theme="dark"] .lock-msg.warn { color: #fb923c; }
 .lib-acts button.danger:hover { color: #dc2626; }
 .lib-sync { font-size: 11.5px; color: var(--text-3); padding: 0 2px 10px; }
 .lib-empty { padding: 18px 4px; text-align: center; font-size: 13px; color: var(--text-3); }
+
+/* ============================================================
+   手机遥控（?remote=1）：隐藏画布，只留几个大按钮
+   ============================================================ */
+body.rm #stage, body.rm .topbar, body.rm .toolbar, body.rm .views-dock,
+body.rm .views-panel, body.rm .boards-panel, body.rm .minimap,
+body.rm .ctxbar, body.rm .guides, body.rm .pres-hint, body.rm .drop-hint { display: none !important; }
+
+#rmui {
+  position: fixed; inset: 0; z-index: 60;
+  padding: max(20px, env(safe-area-inset-top)) 18px 24px;
+  display: flex; flex-direction: column; gap: 14px;
+  background: var(--bg); color: var(--text);
+  overflow-y: auto; -webkit-overflow-scrolling: touch;
+}
+.rm-head { display: flex; align-items: center; justify-content: space-between; }
+.rm-brand { font-size: 10.5px; letter-spacing: .32em; text-transform: uppercase; color: var(--text-3); }
+.rm-brand i { font-style: normal; opacity: .5; }
+.rm-tag { font-size: 11px; padding: 3px 11px; border-radius: 100px; background: var(--accent-soft); color: var(--accent); }
+.rm-status { font-size: 13px; color: var(--text-2); min-height: 20px; }
+.rm-pad { display: grid; grid-template-columns: 1fr 1.5fr 1fr; gap: 10px; }
+.rm-btn {
+  appearance: none; min-height: 76px;
+  border: 1px solid var(--stroke-strong); border-radius: var(--r-md);
+  background: var(--surface-solid); color: var(--text);
+  font: inherit; font-size: 27px; line-height: 1; cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform .12s var(--ease-out), background .2s;
+}
+.rm-btn:active { transform: scale(.96); background: var(--accent-soft); }
+.rm-btn.wide { font-size: 15px; }
+.rm-list { display: flex; flex-direction: column; gap: 8px; }
+.rm-item {
+  display: flex; align-items: center; gap: 11px;
+  padding: 13px 14px; border-radius: var(--r-md);
+  border: 1px solid var(--stroke); background: var(--surface-solid);
+  color: var(--text); font: inherit; font-size: 14px; text-align: left; cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: border-color .2s, background .2s;
+}
+.rm-item:active { transform: scale(.99); }
+.rm-item.cur { border-color: var(--accent); background: var(--accent-soft); }
+.rm-i {
+  flex: none; width: 22px; height: 22px; border-radius: 50%;
+  background: var(--stroke-strong); color: var(--text-2);
+  font-size: 11px; display: grid; place-items: center;
+}
+.rm-back { margin-top: auto; padding: 10px; text-align: center; font-size: 12px; color: var(--text-3); }

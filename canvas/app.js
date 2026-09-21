@@ -55,6 +55,7 @@ const MIN_SCALE = 0.08, MAX_SCALE = 5;
 const STORE_PREFIX = 'canvas.freeform.v1.';
 const lib = { items: [], wid: null, ready: false };   // 画布目录
 const storeKey = wid => STORE_PREFIX + (wid || lib.wid || 'default');
+const REMOTE = /[?&]remote=1/.test(location.search);   // ?remote=1 → 只当遥控器用，不加载画布
 
 /* ------------------------------------------------------------------
    作品目录
@@ -69,6 +70,10 @@ const LIB = 'KxYFxLLoHCa3HHfkmVaMXQXXHzXh';
    于是每台设备各建各的目录，看起来就像「手机和电脑不同步」。别再改回冒号。 */
 const LIB_INDEX_KEY = 'cl-' + LIB;                        // 目录本身
 const LIB_ITEM_KEY = id => 'cl-' + LIB + '-' + id;        // 单份作品
+
+/* 手机遥控：状态与指令各存一条，互不覆盖（指令被冲掉就会丢按键） */
+const RM_HOST = 'cl-' + LIB + '-rmh';    // 电脑端写：当前在第几个视图
+const RM_CMD = 'cl-' + LIB + '-rmc';     // 手机端写：要执行的指令
 const LIB_CFG = 'canvas.lib.cfg';
 const LIB_LOCAL = 'canvas.lib.local';
 
@@ -3037,6 +3042,112 @@ async function libMigrateCloud() {
   return false;
 }
 
+/* ============================================================
+   手机遥控
+   电脑端开着「遥控」时：把当前视图状态写进 RM_HOST，同时每秒读一次 RM_CMD。
+   手机打开 ?remote=1 只显示几个大按钮，点一下往 RM_CMD 写一条指令。
+   两端都只通过云端那条记录通信，所以不用新服务器；代价是 1~2 秒延迟。
+   ============================================================ */
+const remote = { on: false, lastSeq: 0, tCmd: null, tHost: null };
+
+function remoteHostData(off) {
+  if (off) return { v: 1, t: Date.now(), off: true };
+  const b = (typeof board === 'function' && board()) ? board() : null;
+  return {
+    v: 1, t: Date.now(),
+    workId: lib.wid || '', boardId: b ? b.id : '', boardName: b ? b.name : '',
+    playing: !!state.presenting, idx: state.presentIdx || 0,
+    views: ((b && b.views) || []).map(v => ({ name: v.name || '' })),
+  };
+}
+async function remotePublish(off) {
+  try { await cloudSet(RM_HOST, remoteHostData(off)); } catch (e) { /* 忽略 */ }
+}
+async function remoteTick() {
+  if (!remote.on) return;
+  try {
+    const j = await cloudGet(RM_CMD);
+    const c = j && j.data && j.data.cmd;
+    if (!c || !c.seq || c.seq <= remote.lastSeq) return;
+    remote.lastSeq = c.seq;
+    if (c.op === 'next') stepView(1);
+    else if (c.op === 'prev') stepView(-1);
+    else if (c.op === 'goto') gotoView(c.idx || 0);
+    else if (c.op === 'play') togglePresent(true);
+    else if (c.op === 'exit') togglePresent(false);
+    remotePublish();          // 立刻回写状态，手机端马上看到新位置
+  } catch (e) { /* 忽略 */ }
+}
+async function setRemote(on) {
+  remote.on = on;
+  clearInterval(remote.tCmd); clearInterval(remote.tHost);
+  const btn = $('#btnRemote');
+  if (btn) { btn.textContent = '遥控：' + (on ? '开' : '关'); btn.classList.toggle('on', on); }
+  if (on) {
+    await remotePublish();
+    remote.tCmd = setInterval(remoteTick, 1200);
+    remote.tHost = setInterval(() => remotePublish(), 2500);
+    showToast('遥控已开：手机打开 ' + location.origin + location.pathname + '?remote=1');
+  } else {
+    await remotePublish(true);
+    showToast('遥控已关');
+  }
+}
+
+/* ---------------- 遥控器界面（手机） ---------------- */
+async function rmSend(op, idx) {
+  const label = { next: '下一个', prev: '上一个', play: '开始演示', exit: '结束演示', goto: '跳转' }[op] || op;
+  try {
+    await cloudSet(RM_CMD, { v: 1, cmd: { op, idx: (idx === undefined ? -1 : +idx), seq: Date.now(), t: Date.now() } });
+    const s = $('#rmStatus'); if (s) s.textContent = '已发送：' + label;
+  } catch (e) { const s = $('#rmStatus'); if (s) s.textContent = '发送失败，检查网络'; }
+}
+async function rmPoll() {
+  try {
+    const j = await cloudGet(RM_HOST);
+    const h = j && j.data;
+    const st = $('#rmStatus'), list = $('#rmList');
+    if (!h || !h.t || h.off || !h.boardId) {
+      if (st) st.textContent = '电脑上还没开遥控（场景面板 → 遥控）';
+      if (list) list.innerHTML = '';
+      return;
+    }
+    const n = (h.views || []).length;
+    if (!n) { if (st) st.textContent = '这份画布还没记录视图（⌘⇧R 记录）'; if (list) list.innerHTML = ''; return; }
+    if (st && !/^已发送/.test(st.textContent)) {
+      st.textContent = (h.boardName || '画布') + ' · 第 ' + (h.idx + 1) + ' / ' + n + (h.playing ? ' · 演示中' : '');
+    }
+    if (list) list.innerHTML = (h.views || []).map((v, i) =>
+      `<button class="rm-item${i === h.idx ? ' cur' : ''}" data-op="goto" data-idx="${i}">` +
+      `<span class="rm-i">${i + 1}</span>${escapeHtml(v.name || ('视图 ' + (i + 1)))}</button>`).join('');
+  } catch (e) { /* 忽略 */ }
+}
+function startRemoteMode() {
+  if ($('#rmui')) return;
+  const el = document.createElement('div');
+  el.id = 'rmui';
+  el.innerHTML =
+    '<div class="rm-head"><span class="rm-brand">XY<i>.</i>6300</span><span class="rm-tag">遥控</span></div>' +
+    '<div class="rm-status" id="rmStatus">正在连接…</div>' +
+    '<div class="rm-pad">' +
+      '<button class="rm-btn" data-op="prev" aria-label="上一个">&#8249;</button>' +
+      '<button class="rm-btn wide" data-op="play">演示</button>' +
+      '<button class="rm-btn" data-op="next" aria-label="下一个">&#8250;</button>' +
+    '</div>' +
+    '<div class="rm-list" id="rmList"></div>' +
+    '<a class="rm-back" href="./">返回画布</a>';
+  document.body.appendChild(el);
+  el.addEventListener('click', e => {
+    const b = e.target.closest('[data-op]');
+    if (!b) return;
+    const op = b.dataset.op;
+    if (op === 'play') rmSend(b.dataset.playing === '1' ? 'exit' : 'play');
+    else rmSend(op, b.dataset.idx);
+  });
+  rmPoll();
+  setInterval(rmPoll, 2000);
+}
+
 async function libOpen(id, quiet) {
   if (lib.wid && lib.wid !== id) flushSave();        // 切走前先把当前这份存好
   lib.wid = id; saveLibCfg();
@@ -3130,6 +3241,7 @@ function renderLib() {
   if (s) s.textContent = '云同步：' + cloudStatus();
 }
 
+$('#btnRemote').addEventListener('click', () => setRemote(!remote.on));
 $('#btnCloud').addEventListener('click', async () => {
   $('#libMask').classList.add('show');
   renderLib();
@@ -3271,6 +3383,7 @@ function closeLockScreen() {
   lockEl.classList.remove('on');
   lockChain = []; lockFirst = null;
   try { sessionStorage.setItem(UNLOCK_SS, '1'); } catch (e) { /* 忽略 */ }
+  if (REMOTE) { startRemoteMode(); return; }   // 遥控模式不需要载入画布内容
   if (!lib.ready) libBoot().catch(err => { console.warn('目录载入失败', err); });
 }
 
@@ -3408,9 +3521,15 @@ function boot() {
 
   // 目录与云同步：先把旧配置读出来（迁移要用），但先别急着同步
   loadCloudCfg();
-  cloud.on = false;                       // 等真正打开某份 canvas 才连上
+  cloud.on = false;                       // 等真正打开某份画布才连上
   buildLockMarks();
   updateCloudUi();
+  if (REMOTE) {                           // 只当遥控器：不载入画布内容，省电也省流量
+    document.body.classList.add('rm');
+    if (lockNeeded()) openLockScreen('check', '按顺序点击符号解锁');
+    else startRemoteMode();
+    return;
+  }
   if (lockNeeded()) openLockScreen('check', '按顺序点击符号解锁');   // 锁着不发任何请求
   else libBoot().catch(err => { console.warn('目录载入失败', err); });
 }

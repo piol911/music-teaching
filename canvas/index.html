@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>Canvas · 无边画布</title>
-<link rel="stylesheet" href="styles.css?v=1790010523">
+<link rel="stylesheet" href="styles.css?v=1790011162">
 </head>
 <body>
 
@@ -134,6 +134,7 @@
   <div class="bp-list" id="boardList"></div>
   <div class="bp-foot">
     <button class="btn text" id="btnCloud" title="所有画布 / 云同步状态">目录</button>
+    <button class="btn text" id="btnRemote" title="用手机遥控翻视图">遥控：关</button>
     <button class="btn text" id="btnPerfPanel" title="卡顿时切到精简">动效：自动</button>
     <button class="btn text" id="btnImport">导入</button>
     <button class="btn text" id="btnExport">导出</button>
@@ -187,6 +188,7 @@
       <div><kbd>⌘⇧P</kbd></div><span>演示：按视图顺序播放</span>
       <div><kbd>←</kbd> <kbd>→</kbd></div><span>上一个 / 下一个视图</span>
       <div><kbd>⌘⇧B</kbd></div><span>场景面板</span>
+      <div>场景面板 → 遥控</div><span>手机打开 <code>…?remote=1</code> 可翻视图</span>
       <div>拖拽文件</div><span>直接置入图片</span>
     </div>
     <div class="modal-actions">
@@ -232,6 +234,6 @@
 
 <input type="file" id="fileInput" accept="image/*" multiple hidden>
 
-<script src="app.js?v=1790010523"></script>
+<script src="app.js?v=1790011162"></script>
 </body>
 </html>
