@@ -490,9 +490,8 @@
     68% { transform: translateX(-4px); }
   }
 
-  /* 编辑模式下才出现的密码管理入口 */
+  /* 密码管理入口：常显（2026-09-21 改为不用先进编辑模式） */
   .lockBtn {
-    display: none;
     appearance: none;
     padding: 7px 16px;
     border: 1px dashed var(--line-2);
@@ -503,7 +502,7 @@
     transition: color .35s var(--ease), border-color .35s var(--ease);
   }
   .lockBtn:hover { color: var(--accent); border-color: var(--accent); }
-  body.editing .lockBtn { display: inline-block; }
+  .lockBtn[aria-pressed="true"] { border-style: solid; border-color: var(--line-2); color: var(--ink-1); }
 
   /* ================= 弹层 ================= */
   .mask {
@@ -893,6 +892,29 @@ let firstSeq = null;     // 设置时第一次点的顺序
 
 try { const raw = localStorage.getItem(LOCK_LS); if (raw) lockCfg = JSON.parse(raw); } catch (e) { /* 忽略 */ }
 
+/* ------------------------------------------------------------------
+   出厂就带一组密码：音符 → 月牙 → 波浪（下标 0 → 8 → 4）
+   只在从未装过密码的设备上装一次。
+   ⚠️ 这组合写在源码里，所以它只是一层「帘子」：挡得住顺手点开的人，
+      挡不住愿意翻源码的人。想真正保密就得改成只有你自己知道的顺序。
+   改法：解锁后点右上角「改图案」重设；重设后云端也一起更新。
+   ------------------------------------------------------------------ */
+const PRESET_DONE = 'xy6300.portal.lockinit';
+const PRESET_SEQ  = [0, 8, 4];
+const PRESET_SALT = 'xy6300-factory-2026';
+let presetJustInstalled = false;
+
+(function installPreset() {
+  try {
+    const done = localStorage.getItem(PRESET_DONE);
+    if (done || lockCfg) { localStorage.setItem(PRESET_DONE, '1'); return; }
+    lockCfg = { h: digest(PRESET_SEQ, PRESET_SALT), len: PRESET_SEQ.length, salt: PRESET_SALT };
+    saveLockLocal();
+    localStorage.setItem(PRESET_DONE, '1');
+    presetJustInstalled = true;
+  } catch (e) { /* 忽略 */ }
+})();
+
 /* 顺序 → 摘要。用纯 JS 实现而不用 crypto.subtle：后者要求 https，http 下会取不到 */
 function digest(seq, salt) {
   const s = seq.join(',') + '|' + salt;
@@ -1003,7 +1025,9 @@ function tap(i) {
 function commit() {
   const salt = saltOf();
   lockCfg = { h: digest(chain, salt), len: chain.length, salt };
+  presetJustInstalled = false;
   saveLockLocal();
+  syncLockBtn();
   setMsg('正在保存…');
   push().then(ok => {
     if (!code) { closeLock(); toast('已设置，仅这台设备有效（填了空间码才会同步）'); return; }
@@ -1014,7 +1038,9 @@ function commit() {
 
 function clearLock(cb) {
   lockCfg = null;
+  presetJustInstalled = false;
   saveLockLocal();
+  syncLockBtn();
   push().then(() => { if (cb) cb(); });
 }
 
@@ -1067,14 +1093,21 @@ tick();
 setInterval(tick, 20000);
 
 /* ---------------- 启动 ---------------- */
+function syncLockBtn() {
+  const b = $('#lockMgr');
+  b.textContent = lockCfg ? '改图案' : '设密码';
+  b.setAttribute('aria-pressed', lockCfg ? 'true' : 'false');
+}
 buildMarks();
 render();
+syncLockBtn();
 (function bootLock() {
   let unlocked = false;
   try { unlocked = sessionStorage.getItem(UNLOCK_SS) === '1'; } catch (e) { /* 忽略 */ }
   if (lockCfg && !unlocked) openLock('check', '按顺序点击符号解锁');
 })();
-if (code) pull();     // 有空间码就拉一次云端列表
+// 有空间码就拉一次云端；刚装上出厂密码的话顺便写回去，别的设备才能同步到
+if (code) Promise.resolve(pull()).then(() => { if (presetJustInstalled) push(); });
 </script>
 </body>
 </html>
