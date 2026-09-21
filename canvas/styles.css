@@ -1060,31 +1060,13 @@ html[data-theme="dark"] .view-card { background: rgba(255, 255, 255, .07); }
 
 /* 演示模式：隐藏常规外壳 */
 body.presenting .topbar { transform: translateY(-90px); opacity: 0; pointer-events: none; }
+/* 全屏时自动收起顶栏（两种前缀都写上，Chrome / Safari 各认一个） */
+body:fullscreen .topbar, body:-webkit-full-screen .topbar {
+  transform: translateY(-90px); opacity: 0; pointer-events: none;
+}
+body:fullscreen .minimap, body:-webkit-full-screen .minimap { opacity: 0; pointer-events: none; }
 body.presenting .toolbar { transform: translateX(-50%) translateY(120px); opacity: 0; pointer-events: none; }
 body.presenting .minimap { opacity: 0; pointer-events: none; }
-.pres-hint {
-  position: fixed;
-  bottom: 26px; left: 50%;
-  transform: translateX(-50%);
-  padding: 8px 16px;
-  border-radius: 999px;
-  background: rgba(28, 28, 30, .82);
-  -webkit-backdrop-filter: blur(14px);
-  backdrop-filter: blur(14px);
-  color: rgba(255, 255, 255, .92);
-  font-size: 12.5px; font-weight: 500;
-  z-index: 300;
-  display: none;
-  align-items: center; gap: 10px;
-}
-body.presenting .pres-hint { display: flex; animation: elIn .4s var(--ease-spring) both; pointer-events: none; }
-.pres-hint .n { font-variant-numeric: tabular-nums; opacity: .75; }
-.pres-hint .quit {
-  padding: 2px 9px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, .18);
-  font-weight: 700;
-}
 
 /* ---------- 动效质量档位 ---------- */
 /* 拖拽 / 平移 / 相机飞行时：关掉毛玻璃（每帧重算背景模糊很贵）+ 关掉阴影（放大后重绘更贵） */
@@ -1094,11 +1076,6 @@ body.flying .el-body { box-shadow: none !important; }
 body.flying .el-ink path { stroke-width: 3.2; }
 body.q-low .glass,
 body.q-low .modal,
-body.q-low .pres-hint {
-  -webkit-backdrop-filter: none !important;
-  backdrop-filter: none !important;
-  background: var(--surface-opaque) !important;
-}
 body.q-low .modal-mask { -webkit-backdrop-filter: none; backdrop-filter: none; }
 body.q-low .el.appear { animation-duration: .24s !important; }
 body.q-low .modal { transition-duration: .2s !important; }
@@ -1148,7 +1125,6 @@ body.q-low .toolbar, body.q-low .topbar { transition-duration: .28s; }
   /* 视图 Dock 抬到工具栏之上，避免和居中工具栏打架 */
   .views-dock { bottom: 76px; left: 10px; }
   .views-panel { bottom: 120px; left: 10px; width: 160px; max-height: 40vh; }
-  .pres-hint { bottom: 20px; font-size: 11.5px; padding: 7px 14px; }
   .toast { bottom: 122px; }
 
   .boards-panel {
@@ -1275,7 +1251,7 @@ html[data-theme="dark"] .lock-msg.warn { color: #fb923c; }
    ============================================================ */
 body.rm #stage, body.rm .topbar, body.rm .toolbar, body.rm .views-dock,
 body.rm .views-panel, body.rm .boards-panel, body.rm .minimap,
-body.rm .ctxbar, body.rm .guides, body.rm .pres-hint, body.rm .drop-hint { display: none !important; }
+body.rm .ctxbar, body.rm .guides, body.rm .drop-hint { display: none !important; }
 
 #rmui {
   position: fixed; inset: 0; z-index: 60;
@@ -1336,3 +1312,8 @@ body.rm .ctxbar, body.rm .guides, body.rm .pres-hint, body.rm .drop-hint { displ
 }
 .rm-fs:active { transform: scale(.96); }
 .rm-fs:disabled { opacity: .5; cursor: default; }
+
+/* 遥控页的「退出演示」按钮：没在演示时置灰 */
+.rm-btn.stop { min-height: 52px; font-size: 15px; width: 100%; }
+.rm-btn.stop:disabled { opacity: .38; background: var(--surface-solid); }
+.rm-btn.stop.on { border-color: var(--accent); color: var(--accent); }

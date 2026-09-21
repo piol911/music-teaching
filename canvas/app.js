@@ -2422,7 +2422,7 @@ function showToast(msg) {
 
 /* ---------------- 视图记录 —— 把画布当 PPT 用 ---------------- */
 const viewsDock = $('#viewsDock'), viewsPanel = $('#viewsPanel'), viewsList = $('#viewsList');
-const vdCount = $('#btnToggleViews'), presHint = $('#presHint'), presN = $('#presN');
+const vdCount = $('#btnToggleViews');
 
 /* 默认收起：只在左下角留翻页键；需要增删/改名时再展开面板 */
 function toggleViewsPanel(force) {
@@ -2657,10 +2657,10 @@ function stepView(dir) {
   state.presentIdx = (state.presentIdx + dir + vs.length) % vs.length;
   gotoView(state.presentIdx);
 }
+/* 页码只留左下角那一个 —— 中间那条曾经和它重复，已整个移除 */
 function updatePresHint() {
   const vs = board().views || [];
   const txt = vs.length ? `${state.presentIdx + 1} / ${vs.length}` : '0 / 0';
-  presN.textContent = txt;
   vdCount.textContent = txt;
   vdCount.title = vs.length ? '展开视图列表' : '还没有视图，点这里记录当前画面';
 }
@@ -3089,8 +3089,13 @@ async function remoteTick() {
     if (c.op === 'next') stepView(1);
     else if (c.op === 'prev') stepView(-1);
     else if (c.op === 'goto') gotoView(c.idx || 0);
-    else if (c.op === 'play') togglePresent(true);
-    else if (c.op === 'exit') togglePresent(false);
+    else if (c.op === 'play') {
+      togglePresent(true);
+      /* 全屏必须由本机手势触发：手机发来的指令是定时器里执行的，浏览器会拒绝。
+         所以真正可靠的是「开遥控那一下就全屏」（见 setRemote）。这里再尽力试一次，
+         试不成就提示一下，不至于让人以为坏了。 */
+      if (!fsNow() && !goFullscreen()) showToast('若没全屏：电脑上按 F 或点一下 ▶');
+    } else if (c.op === 'exit') togglePresent(false);
     remotePublish();          // 立刻回写状态，手机端马上看到新位置
   } catch (e) { /* 忽略 */ }
 }
@@ -3153,6 +3158,8 @@ async function rmPoll() {
     if (st && !/^已发送/.test(st.textContent)) {
       st.textContent = (h.boardName || '画布') + ' · 第 ' + (h.idx + 1) + ' / ' + n + (h.playing ? ' · 演示中' : '');
     }
+    const stop = $('#rmStop');
+    if (stop) { stop.disabled = !h.playing; stop.classList.toggle('on', !!h.playing); }
     if (list) list.innerHTML = (h.views || []).map((v, i) =>
       `<button class="rm-item${i === h.idx ? ' cur' : ''}" data-op="goto" data-idx="${i}">` +
       `<span class="rm-i">${i + 1}</span>${escapeHtml(v.name || ('视图 ' + (i + 1)))}</button>`).join('');
@@ -3168,9 +3175,10 @@ function startRemoteMode() {
     '<div class="rm-status" id="rmStatus">正在连接…</div>' +
     '<div class="rm-pad">' +
       '<button class="rm-btn" data-op="prev" aria-label="上一个">&#8249;</button>' +
-      '<button class="rm-btn wide" data-op="play">演示</button>' +
+      '<button class="rm-btn wide" data-op="play" id="rmPlay">演示</button>' +
       '<button class="rm-btn" data-op="next" aria-label="下一个">&#8250;</button>' +
     '</div>' +
+    '<button class="rm-btn stop" data-op="exit" id="rmStop">退出演示</button>' +
     '<div class="rm-list" id="rmList"></div>' +
     '<a class="rm-back" href="./">返回画布</a>';
   document.body.appendChild(el);
