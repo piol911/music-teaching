@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>Canvas · 无边画布</title>
-<link rel="stylesheet" href="styles.css?v=1789836755">
+<link rel="stylesheet" href="styles.css?v=1790004116">
 </head>
 <body>
 
@@ -133,7 +133,7 @@
   </div>
   <div class="bp-list" id="boardList"></div>
   <div class="bp-foot">
-    <button class="btn text" id="btnCloud" title="手机电脑自动同步">云同步</button>
+    <button class="btn text" id="btnCloud" title="所有画布 / 云同步状态">目录</button>
     <button class="btn text" id="btnPerfPanel" title="卡顿时切到精简">动效：自动</button>
     <button class="btn text" id="btnImport">导入</button>
     <button class="btn text" id="btnExport">导出</button>
@@ -195,23 +195,30 @@
   </div>
 </div>
 
-<!-- ============ 云同步 ============ -->
-<div class="modal-mask" id="cloudMask">
-  <div class="modal glass">
-    <h3>云同步</h3>
-    <p class="modal-sub">起一个<b>空间码</b>（当成一把钥匙），手机和电脑填<b>同一个</b>，画布内容就会自动互通。</p>
-    <input class="modal-input" id="cloudKey" placeholder="空间码，例如 lxy-canvas-2026" autocomplete="off">
-    <p class="modal-sub" style="margin:12px 0 0">
-      · 改动后几秒内自动上传，打开页面 / 切回前台自动检查更新<br>
-      · 空间码请起得随机一点，知道它的人才能读写这份画布<br>
-      · <b>图片也会同步</b>：新导入的图自动存到云端，本地已存的旧图会逐张搬上去（不用手动操作）
-    </p>
-    <div class="modal-err" id="cloudErr"></div>
+<!-- ============ 画布目录（多份作品 + 云同步状态） ============ -->
+<div class="modal-mask" id="libMask">
+  <div class="modal glass wide">
+    <h3>画布目录</h3>
+    <p class="modal-sub">每份画布各存各的，内容都自动同步到云端，<b>不用再记任何码</b>。<br>换一台设备打开这里，看到的还是同一份目录。</p>
+    <div class="lib-list" id="libList"></div>
+    <div class="lib-sync" id="libSync">—</div>
+    <div class="modal-err" id="libErr"></div>
     <div class="modal-actions">
-      <button class="btn text danger" id="cloudOff">关闭同步</button>
-      <button class="btn text" id="cloudCancel">取消</button>
-      <button class="btn primary" id="cloudOk">保存并连接</button>
+      <button class="btn text" id="libClose">关闭</button>
+      <button class="btn primary" id="libNew">新建画布</button>
     </div>
+  </div>
+</div>
+
+<!-- ============ 图形密码锁屏 ============ -->
+<div class="lockmask" id="lockMask">
+  <div class="lockbox glass">
+    <span class="lock-brand">XY<i>.</i>6300</span>
+    <h3 id="lockTitle">我的画布</h3>
+    <p class="lock-msg" id="lockMsg">按顺序点击符号解锁</p>
+    <ul class="marks" id="marks"></ul>
+    <div class="seq" id="seq" aria-hidden="true"></div>
+    <div class="lock-acts" id="lockActs"></div>
   </div>
 </div>
 
@@ -225,6 +232,6 @@
 
 <input type="file" id="fileInput" accept="image/*" multiple hidden>
 
-<script src="app.js?v=1789836755"></script>
+<script src="app.js?v=1790004116"></script>
 </body>
 </html>

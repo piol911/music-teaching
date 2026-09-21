@@ -1159,3 +1159,104 @@ body.q-low .toolbar, body.q-low .topbar { transition-duration: .28s; }
   .toolbar { height: 46px; bottom: 12px; }
   .tool { width: 32px; height: 32px; }
 }
+
+/* ============================================================
+   图形密码锁屏 + 画布目录（2026-09-21 新增）
+   ============================================================ */
+.lockmask {
+  position: fixed; inset: 0; z-index: 9999;
+  display: flex; align-items: center; justify-content: center;
+  padding: 20px;
+  background: color-mix(in srgb, var(--bg-deep) 88%, transparent);
+  backdrop-filter: var(--panel-blur);
+  -webkit-backdrop-filter: var(--panel-blur);
+  opacity: 0; visibility: hidden;
+  transition: opacity .32s var(--ease-out), visibility .32s;
+}
+.lockmask.on { opacity: 1; visibility: visible; }
+.lockbox {
+  width: min(420px, 100%);
+  padding: 28px 26px 24px;
+  border-radius: var(--r-xl);
+  box-shadow: var(--shadow-lg);
+  text-align: center;
+  transform: translateY(10px) scale(.985);
+  transition: transform .42s var(--ease-ios);
+}
+.lockmask.on .lockbox { transform: none; }
+.lockbox.shake { animation: lockShake .42s var(--ease-out); }
+@keyframes lockShake {
+  0%,100% { transform: translateX(0); }
+  18% { transform: translateX(-9px); }
+  38% { transform: translateX(7px); }
+  62% { transform: translateX(-4px); }
+  82% { transform: translateX(2px); }
+}
+.lock-brand {
+  display: block; margin-bottom: 18px;
+  font-size: 10.5px; letter-spacing: .32em; text-transform: uppercase;
+  color: var(--text-3);
+}
+.lock-brand i { font-style: normal; opacity: .5; }
+.lockbox h3 { margin: 0 0 6px; font-size: 19px; font-weight: 600; letter-spacing: .01em; color: var(--text); }
+.lock-msg { margin: 0 0 20px; font-size: 13px; color: var(--text-2); min-height: 18px; }
+.lock-msg.warn { color: #c2410c; }
+html[data-theme="dark"] .lock-msg.warn { color: #fb923c; }
+
+.marks { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 0; padding: 0; list-style: none; }
+.mark-t {
+  position: relative; width: 100%; aspect-ratio: 1;
+  display: grid; place-items: center;
+  border: 1px solid var(--stroke); border-radius: var(--r-md);
+  background: var(--surface-solid);
+  color: var(--text-2); cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: color .22s var(--ease-out), border-color .22s var(--ease-out), transform .22s var(--ease-out);
+}
+.mark-t svg { width: 54%; height: 54%; }
+.mark-t:hover { color: var(--text); border-color: var(--stroke-strong); }
+.mark-t:active { transform: scale(.94); }
+.mark-t[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+.mark-t .ord {
+  position: absolute; top: 4px; right: 5px;
+  font-size: 9.5px; font-weight: 700; color: var(--accent);
+}
+.seq { display: flex; justify-content: center; gap: 7px; margin: 18px 0 16px; }
+.seq i { width: 5px; height: 5px; border-radius: 50%; background: var(--stroke-strong); transition: background .2s, transform .2s var(--ease-spring); }
+.seq i.on { background: var(--accent); transform: scale(1.45); }
+.lock-acts { display: flex; justify-content: center; gap: 8px; flex-wrap: wrap; }
+.lock-acts button {
+  appearance: none; padding: 7px 15px; border-radius: 100px;
+  border: 1px solid var(--stroke-strong); background: none;
+  font: inherit; font-size: 12.5px; color: var(--text-2); cursor: pointer;
+  transition: color .2s, border-color .2s, opacity .2s;
+}
+.lock-acts button:hover:not(:disabled) { color: var(--text); border-color: var(--text-3); }
+.lock-acts button:disabled { opacity: .35; cursor: default; }
+
+/* 目录列表 */
+.lib-list { max-height: 46vh; overflow-y: auto; margin: 4px 0 12px; border-radius: var(--r-md); }
+.lib-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 11px 12px; border-radius: var(--r-md);
+  cursor: pointer; transition: background .18s var(--ease-out);
+}
+.lib-row:hover { background: var(--accent-soft); }
+.lib-row.cur { background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent); }
+.lib-ico { flex: none; width: 34px; height: 34px; border-radius: 9px; display: grid; place-items: center;
+  background: var(--surface-solid); border: 1px solid var(--stroke); color: var(--text-2); }
+.lib-ico svg { width: 18px; height: 18px; }
+.lib-main { flex: 1; min-width: 0; }
+.lib-name { font-size: 14px; font-weight: 550; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lib-meta { font-size: 11.5px; color: var(--text-3); margin-top: 2px; }
+.lib-acts { flex: none; display: flex; gap: 4px; opacity: 0; transition: opacity .18s; }
+.lib-row:hover .lib-acts, .lib-row:focus-within .lib-acts { opacity: 1; }
+.lib-acts button {
+  appearance: none; width: 28px; height: 28px; border-radius: 8px;
+  border: none; background: none; color: var(--text-2); cursor: pointer; font-size: 15px; line-height: 1;
+  display: grid; place-items: center; transition: background .18s, color .18s;
+}
+.lib-acts button:hover { background: var(--surface-solid); color: var(--text); }
+.lib-acts button.danger:hover { color: #dc2626; }
+.lib-sync { font-size: 11.5px; color: var(--text-3); padding: 0 2px 10px; }
+.lib-empty { padding: 18px 4px; text-align: center; font-size: 13px; color: var(--text-3); }

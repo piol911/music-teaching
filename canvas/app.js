@@ -51,7 +51,23 @@ const helpMask = $('#helpMask');
 const MIN_SCALE = 0.08, MAX_SCALE = 5;
 
 /* ---------------- 状态 ---------------- */
-const STORE = 'canvas.freeform.v1';
+/* 本地存储的键跟着「当前打开的是哪份画布」走，多份才能并存互不覆盖 */
+const STORE_PREFIX = 'canvas.freeform.v1.';
+const lib = { items: [], wid: null, ready: false };   // 画布目录
+const storeKey = wid => STORE_PREFIX + (wid || lib.wid || 'default');
+
+/* ------------------------------------------------------------------
+   作品目录
+   以前是「一个空间码 = 一整份画布」，忘了码就等于内容没了。
+   现在改成：钥匙烧在页面里（不再要你记任何东西），一份云端索引 + 多份作品，
+   每份作品单独一条记录，互不影响；访问则由图形密码把着。
+   ⚠️ 钥匙在源码里，所以这仍是「帘子」不是「保险柜」——挡随手点开，挡不住翻源码的人。
+   ------------------------------------------------------------------ */
+const LIB = 'KxYFxLLoHCa3HHfkmVaMXQXXHzXh';
+const LIB_INDEX_KEY = 'cl:' + LIB;                       // 目录本身
+const LIB_ITEM_KEY = id => 'cl:' + LIB + ':' + id;       // 单份作品
+const LIB_CFG = 'canvas.lib.cfg';
+const LIB_LOCAL = 'canvas.lib.local';
 
 const state = {
   boards: [],
@@ -94,7 +110,7 @@ function save() {
   let str;
   try { str = JSON.stringify(payload); } catch (e) { return; }
   try {
-    localStorage.setItem(STORE, str);
+    localStorage.setItem(storeKey(), str);
     saveStateEl.textContent = '已保存';
   } catch (e) {
     // 超出配额：从最大的图片开始逐张剔除，能留几张留几张
@@ -109,7 +125,7 @@ function save() {
         imgs[0].src = '';
         dropped++;
         try {
-          localStorage.setItem(STORE, JSON.stringify(slim));
+          localStorage.setItem(storeKey(), JSON.stringify(slim));
           ok = true;
           break;
         } catch (e3) { /* 还超，继续剔 */ }
@@ -127,7 +143,7 @@ function save() {
 
 function load() {
   let data = null;
-  try { data = JSON.parse(localStorage.getItem(STORE) || 'null'); } catch (e) { data = null; }
+  try { data = JSON.parse(localStorage.getItem(storeKey()) || 'null'); } catch (e) { data = null; }
   if (data && Array.isArray(data.boards) && data.boards.length) {
     state.boards = data.boards;
     state.activeId = data.activeId && data.boards.some(b => b.id === data.activeId) ? data.activeId : data.boards[0].id;
@@ -2829,46 +2845,368 @@ function scheduleCloudPush() {
   cloudPushTimer = setTimeout(() => cloudPush(), 2200);
 }
 
-$('#btnCloud').addEventListener('click', () => {
-  $('#cloudKey').value = cloud.key || '';
-  $('#cloudErr').classList.remove('show');
-  $('#cloudMask').classList.add('show');
-  updateCloudUi();
-});
-$('#cloudCancel').addEventListener('click', () => $('#cloudMask').classList.remove('show'));
-$('#cloudOk').addEventListener('click', async () => {
-  const key = $('#cloudKey').value.trim();
-  const err = $('#cloudErr');
-  if (!key) { err.textContent = '请填一个空间码'; err.classList.add('show'); return; }
-  if (!/^[A-Za-z0-9_-]{3,64}$/.test(key)) {
-    err.textContent = '空间码至少 3 位，只能用字母、数字、- 和 _';
-    err.classList.add('show');
-    return;
-  }
-  err.textContent = '正在连接…';
-  err.classList.add('show');
+/* ============================================================
+   作品目录：一份索引 + 多份作品记录，每份单独存，互不影响
+   ============================================================ */
+async function cloudGet(key) {
+  const r = await fetch(CLOUD_API + '?key=' + encodeURIComponent(key), { cache: 'no-store' });
+  return r.json();
+}
+async function cloudSet(key, data) {
+  const r = await fetch(CLOUD_API, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ key, data })
+  });
+  return r.json().catch(() => null);
+}
+
+function loadLibCfg() {
+  try { const j = JSON.parse(localStorage.getItem(LIB_CFG) || '{}'); lib.wid = j.wid || null; } catch (e) { /* 忽略 */ }
+}
+function saveLibCfg() { try { localStorage.setItem(LIB_CFG, JSON.stringify({ wid: lib.wid })); } catch (e) { /* 忽略 */ } }
+function libWriteLocal() { try { localStorage.setItem(LIB_LOCAL, JSON.stringify(lib.items)); } catch (e) { /* 忽略 */ } }
+function libReadLocal() { try { const a = JSON.parse(localStorage.getItem(LIB_LOCAL) || '[]'); return Array.isArray(a) ? a : []; } catch (e) { return []; } }
+
+const elCount = () => state.boards.reduce((s, b) => s + (b.elements ? b.elements.length : 0), 0);
+function flushSave() { clearTimeout(saveTimer); save(); }
+
+function libTouch(pushIdx) {
+  const it = lib.items.find(x => x.id === lib.wid);
+  if (it) { it.updatedAt = Date.now(); it.el = elCount(); }
+  libWriteLocal();
+  if (pushIdx) libPushIndex();
+}
+
+async function libPullIndex() {
   try {
-    await cloudConnect(key);
-    $('#cloudMask').classList.remove('show');
-    err.classList.remove('show');
-  } catch (e) {
-    err.textContent = (e && e.message) ? e.message : '连接失败';
-    console.warn('云同步连接失败', e);
+    const j = await cloudGet(LIB_INDEX_KEY);
+    if (j && j.data && Array.isArray(j.data.items)) lib.items = j.data.items;
+  } catch (e) { /* 离线就用本机那份 */ }
+  if (!lib.items.length) lib.items = libReadLocal();
+  libWriteLocal();
+}
+async function libPushIndex() {
+  try {
+    const j = await cloudSet(LIB_INDEX_KEY, { v: 1, items: lib.items, active: lib.wid });
+    return !!(j && j.ok);
+  } catch (e) { return false; }
+}
+
+/* 旧版本把内容存在一个固定的本地键里 —— 别丢，搬进目录作为第一份作品 */
+function libMigrateLocal() {
+  try {
+    const raw = localStorage.getItem('canvas.freeform.v1');
+    if (!raw) return false;
+    const d = JSON.parse(raw);
+    if (!d || !Array.isArray(d.boards) || !d.boards.length) return false;
+    const id = uid();
+    localStorage.setItem(storeKey(id), raw);
+    localStorage.removeItem('canvas.freeform.v1');
+    lib.items.push({ id, name: '原来的画布', el: d.boards.reduce((s, b) => s + (b.elements || []).length, 0), updatedAt: Date.now() });
+    libWriteLocal();
+    return true;
+  } catch (e) { return false; }
+}
+
+/* 以前用「空间码」存的那份，也一并搬过来 */
+async function libMigrateCloud() {
+  const flag = 'canvas.lib.migrated';
+  if (localStorage.getItem(flag)) return false;
+  localStorage.setItem(flag, '1');
+  const oldKey = cloud.key;
+  if (!oldKey || /^(cl:|--portal$)/.test(oldKey)) return false;
+  try {
+    const j = await cloudGet(oldKey);
+    if (j && j.data && Array.isArray(j.data.boards) && j.data.boards.length) {
+      const id = uid();
+      await cloudSet(LIB_ITEM_KEY(id), j.data);
+      lib.items.push({ id, name: '原来的画布', el: j.data.boards.reduce((s, b) => s + (b.elements || []).length, 0), updatedAt: Date.now() });
+      await libPushIndex();
+      return true;
+    }
+  } catch (e) { /* 失败就算了 */ }
+  return false;
+}
+
+async function libOpen(id, quiet) {
+  if (lib.wid && lib.wid !== id) flushSave();        // 切走前先把当前这份存好
+  lib.wid = id; saveLibCfg();
+  cloud.key = LIB_ITEM_KEY(id); cloud.on = true; ensureCloudTimers();
+  load();
+  renderBoard();
+  boardNameEl.value = board().name;
+  applyCamera(); drawMinimap(); renderViews();
+  lastSnapshot = snapshot();
+  await cloudPull(true);
+  cloudMigrateImages();
+  libTouch(true);
+  updateCloudUi();
+  if (!quiet) {
+    const it = lib.items.find(x => x.id === id);
+    showToast('已打开「' + ((it && it.name) || '未命名') + '」');
   }
-  updateCloudUi();
+}
+
+async function libCreate(name) {
+  const id = uid();
+  lib.items.push({ id, name: name || ('画布 ' + (lib.items.length + 1)), el: 0, updatedAt: Date.now() });
+  await libPushIndex();
+  await libOpen(id, true);
+  showToast('已新建「' + (name || '画布') + '」');
+}
+
+async function libRename(id) {
+  const it = lib.items.find(x => x.id === id);
+  if (!it) return;
+  const v = prompt('给它起个名字', it.name || '');
+  if (v == null) return;
+  it.name = v.trim() || '未命名';
+  await libPushIndex(); libWriteLocal();
+  renderLib();
+}
+
+async function libDup(id) {
+  try {
+    const j = await cloudGet(LIB_ITEM_KEY(id));
+    if (!j || !j.data) throw 0;
+    const nid = uid();
+    const src = lib.items.find(x => x.id === id);
+    await cloudSet(LIB_ITEM_KEY(nid), j.data);
+    lib.items.push({ id: nid, name: ((src && src.name) || '画布') + ' 副本', el: (src && src.el) || 0, updatedAt: Date.now() });
+    await libPushIndex(); libWriteLocal();
+    renderLib();
+    showToast('已复制一份');
+  } catch (e) { showToast('复制失败，检查网络'); }
+}
+
+async function libDelete(id) {
+  if (lib.items.length <= 1) { showToast('至少留一份画布'); return; }
+  const it = lib.items.find(x => x.id === id);
+  if (!confirm('删除「' + ((it && it.name) || '未命名') + '」？里面的内容会一起删掉，删了找不回来。')) return;
+  lib.items = lib.items.filter(x => x.id !== id);
+  libWriteLocal();
+  await libPushIndex();
+  try { localStorage.removeItem(storeKey(id)); } catch (e) { /* 忽略 */ }
+  renderLib();
+  if (lib.wid === id) { await libOpen(lib.items[0].id, true); }
+  showToast('已删除');
+}
+
+function fmtTime(t) {
+  if (!t) return '还没同步';
+  const d = new Date(t), p = n => String(n).padStart(2, '0');
+  return `${d.getMonth() + 1}月${d.getDate()}日 ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+function renderLib() {
+  const box = $('#libList');
+  if (!box) return;
+  if (!lib.items.length) { box.innerHTML = '<div class="lib-empty">还没有画布 — 点下面「新建画布」</div>'; }
+  else {
+    box.innerHTML = lib.items.map(it => `
+      <div class="lib-row${it.id === lib.wid ? ' cur' : ''}" data-id="${it.id}">
+        <span class="lib-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><rect x="3" y="4.5" width="18" height="15" rx="3"/><path d="M7.5 9.5h9M7.5 13.5h5"/></svg></span>
+        <span class="lib-main">
+          <span class="lib-name">${escapeHtml(it.name || '未命名')}</span>
+          <span class="lib-meta">${it.el || 0} 个元素 · ${fmtTime(it.updatedAt)}</span>
+        </span>
+        <span class="lib-acts">
+          <button data-a="rename" title="改名" aria-label="改名">&#9998;</button>
+          <button data-a="dup" title="复制一份" aria-label="复制">&#9147;</button>
+          <button data-a="del" class="danger" title="删除" aria-label="删除">&#10005;</button>
+        </span>
+      </div>`).join('');
+  }
+  const s = $('#libSync');
+  if (s) s.textContent = '云同步：' + cloudStatus();
+}
+
+$('#btnCloud').addEventListener('click', async () => {
+  $('#libMask').classList.add('show');
+  renderLib();
+  await libPullIndex();
+  renderLib();
 });
-$('#cloudOff').addEventListener('click', () => {
-  cloud.on = false;
-  saveCloudCfg();
-  updateCloudUi();
-  showToast('已关闭云同步');
+$('#libClose').addEventListener('click', () => $('#libMask').classList.remove('show'));
+$('#libMask').addEventListener('click', e => { if (e.target === $('#libMask')) $('#libMask').classList.remove('show'); });
+$('#libNew').addEventListener('click', async () => {
+  const v = prompt('新画布的名字', '画布 ' + (lib.items.length + 1));
+  if (v == null) return;
+  await libCreate(v.trim() || ('画布 ' + (lib.items.length + 1)));
+  renderLib();
+  $('#libMask').classList.remove('show');
 });
+$('#libList').addEventListener('click', async e => {
+  const row = e.target.closest('.lib-row');
+  if (!row) return;
+  const id = row.dataset.id;
+  const btn = e.target.closest('button[data-a]');
+  if (!btn) { $('#libMask').classList.remove('show'); await libOpen(id); return; }
+  e.stopPropagation();
+  const a = btn.dataset.a;
+  if (a === 'rename') await libRename(id);
+  else if (a === 'dup') await libDup(id);
+  else if (a === 'del') await libDelete(id);
+});
+
+async function libBoot() {
+  loadLibCfg();
+  try { localStorage.removeItem(STORE_PREFIX + 'default'); } catch (e) { /* 忽略 */ }
+  libMigrateLocal();                       // 旧的本机内容别丢
+  await libPullIndex();
+  if (!lib.items.length) await libMigrateCloud();   // 旧空间码那份也搬过来
+  if (!lib.items.length) {
+    await libCreate('画布 1');
+  } else {
+    const want = lib.items.some(x => x.id === lib.wid) ? lib.wid : lib.items[0].id;
+    await libOpen(want, true);
+  }
+  lib.ready = true;
+  await libPushIndex();
+}
 
 function updateCloudUi() {
   const btn = $('#btnCloud');
   if (!btn) return;
-  btn.textContent = cloud.on ? '云同步 · 开' : '云同步';
+  btn.textContent = '目录';
   btn.title = cloudStatus();
+}
+
+/* ============================================================
+   图形密码：与门户页xy6300.cc 共用同一把锁（同一个 localStorage 键）
+   ⚠️ 帘子，不是保险柜：验证在前端，源文件谁都能看
+   ============================================================ */
+const LOCK_LS = 'xy6300.portal.lock';
+const UNLOCK_SS = 'xy6300.portal.unlocked';
+const PRESET_DONE = 'xy6300.portal.lockinit';
+const PRESET_SEQ = [0, 8, 4];          // 音符 → 月牙 → 波浪，与门户页一致
+const PRESET_SALT = 'xy6300-factory-2026';
+
+const LOCK_MARKS = [
+  '<circle cx="8.5" cy="16.5" r="3.2"/><path d="M11.7 16.5V6.5l7-2.6v9"/><path d="M18.7 12.9c-1.4.6-2.8.5-4-.4"/>',
+  '<circle cx="12" cy="12" r="7.5"/>',
+  '<path d="M12 5l7 13H5z"/>',
+  '<rect x="5.5" y="5.5" width="13" height="13"/>',
+  '<path d="M3 12c2.2-3.4 4.4-3.4 6.6 0s4.4 3.4 6.6 0 4.4-3.4 4.8-2.6"/>',
+  '<path d="M12 3.5c1.2 5.2 1.2 8.8 0 17-1.2-8.2-1.2-11.8 0-17z"/><path d="M3.5 12c5.2-1.2 8.8-1.2 17 0-8.2 1.2-11.8 1.2-17 0z"/>',
+  '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3.4"/>',
+  '<path d="M6 6l12 12M18 6L6 18"/>',
+  '<path d="M15.8 4.2a8.2 8.2 0 1 0 0 15.6 10 10 0 0 1 0-15.6z"/>',
+  '<path d="M12 3.5s6 6.6 6 10.5a6 6 0 0 1-12 0C6 10.1 12 3.5 12 3.5z"/>',
+  '<path d="M4.5 19.5C4.5 11 11 6 19.5 6c0 8.5-6.5 13.5-15 13.5z"/><path d="M4.5 19.5C9 15 13.5 12 19.5 10.4"/>',
+  '<path d="M9 3v18M15 3v18M3 9h18M3 15h18"/>'
+];
+
+let lockCfg = null, lockChain = [], lockStage = 'check', lockFirst = null;
+try { const raw = localStorage.getItem(LOCK_LS); if (raw) lockCfg = JSON.parse(raw); } catch (e) { /* 忽略 */ }
+
+/* 出厂密码：没设过就装一个，以后可以自己在门户页改 */
+(function installPreset() {
+  try {
+    const done = localStorage.getItem(PRESET_DONE);
+    if (done || lockCfg) { localStorage.setItem(PRESET_DONE, '1'); return; }
+    lockCfg = { h: lockDigest(PRESET_SEQ, PRESET_SALT), len: PRESET_SEQ.length, salt: PRESET_SALT };
+    localStorage.setItem(LOCK_LS, JSON.stringify(lockCfg));
+    localStorage.setItem(PRESET_DONE, '1');
+  } catch (e) { /* 忽略 */ }
+})();
+
+function lockDigest(seq, salt) {          // 不用 crypto.subtle：http 下取不到
+  const s = seq.join(',') + '|' + salt;
+  let a = 0x811c9dc5, b = 0x5f3a1c07;
+  for (let i = 0; i < s.length; i++) {
+    a = Math.imul(a ^ s.charCodeAt(i), 0x01000193) >>> 0;
+    b = (Math.imul(b, 0x21) + s.charCodeAt(i) * (i + 7)) >>> 0;
+  }
+  return a.toString(36) + '-' + b.toString(36);
+}
+
+const lockEl = $('#lockMask');
+const lockSvg = inner => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${inner}</svg>`;
+
+function buildLockMarks() {
+  $('#marks').innerHTML = LOCK_MARKS.map((m, i) =>
+    `<li><button class="mark-t" data-i="${i}" aria-pressed="false" aria-label="符号 ${i + 1}">${lockSvg(m)}</button></li>`
+  ).join('');
+}
+
+function setLockMsg(t, warn) {
+  const m = $('#lockMsg');
+  m.textContent = t;
+  m.className = 'lock-msg' + (warn ? ' warn' : '');
+}
+
+function lockRefresh() {
+  const n = Math.max(lockChain.length, 3);
+  $('#seq').innerHTML = Array.from({ length: n }, (_, i) => `<i class="${i < lockChain.length ? 'on' : ''}"></i>`).join('');
+  const a = $('#lockActs');
+  if (lockStage === 'manage') a.innerHTML = '<button data-act="off">取消密码</button><button data-act="close">关闭</button>';
+  else a.innerHTML = '<button data-act="clear">重来</button>';
+  document.querySelectorAll('#marks .mark-t').forEach(b => {
+    const k = lockChain.indexOf(+b.dataset.i);
+    b.setAttribute('aria-pressed', k >= 0 ? 'true' : 'false');
+    let o = b.querySelector('.ord');
+    if (k >= 0) { if (!o) b.insertAdjacentHTML('beforeend', '<span class="ord"></span>'), o = b.querySelector('.ord'); o.textContent = k + 1; }
+    else if (o) o.remove();
+  });
+}
+
+function openLockScreen(s, msg) {
+  lockStage = s; lockChain = []; lockFirst = null;
+  lockEl.classList.add('on');
+  $('#lockTitle').textContent = s === 'manage' ? '图案密码' : '我的画布';
+  setLockMsg(msg);
+  lockRefresh();
+}
+function closeLockScreen() {
+  lockEl.classList.remove('on');
+  lockChain = []; lockFirst = null;
+  try { sessionStorage.setItem(UNLOCK_SS, '1'); } catch (e) { /* 忽略 */ }
+  if (!lib.ready) libBoot().catch(err => { console.warn('目录载入失败', err); });
+}
+
+function lockFail(msg) {
+  setLockMsg(msg || '顺序不对，再试一次', true);
+  lockEl.querySelector('.lockbox').classList.add('shake');
+  setTimeout(() => lockEl.querySelector('.lockbox').classList.remove('shake'), 460);
+  setTimeout(() => { if (lockStage === 'check') { lockChain = []; setLockMsg('按顺序点击符号解锁'); lockRefresh(); } }, 620);
+}
+
+function lockTap(i) {
+  if (lockStage === 'manage') return;
+  if (lockChain.includes(i)) { lockChain = lockChain.filter(x => x !== i); lockRefresh(); return; }
+  lockChain.push(i);
+  lockRefresh();
+  if (lockStage === 'check') {
+    if (lockCfg && lockDigest(lockChain, lockCfg.salt) === lockCfg.h) {
+      setLockMsg('好');
+      setTimeout(closeLockScreen, 260);
+    } else if (lockCfg && lockChain.length >= lockCfg.len) lockFail();
+  }
+}
+
+$('#marks').addEventListener('click', e => {
+  const b = e.target.closest('.mark-t');
+  if (b) lockTap(+b.dataset.i);
+});
+$('#lockActs').addEventListener('click', e => {
+  const b = e.target.closest('button');
+  if (!b || b.disabled) return;
+  const a = b.dataset.act;
+  if (a === 'clear') { lockChain = []; setLockMsg('按顺序点击符号解锁'); lockRefresh(); }
+  if (a === 'close') closeLockScreen();
+  if (a === 'off') {
+    lockCfg = null;
+    try { localStorage.removeItem(LOCK_LS); } catch (err) { /* 忽略 */ }
+    closeLockScreen();
+    showToast('已取消图形密码');
+  }
+});
+
+function lockNeeded() {
+  let u = false;
+  try { u = sessionStorage.getItem(UNLOCK_SS) === '1'; } catch (e) { /* 忽略 */ }
+  return !!lockCfg && !u;
 }
 
 /* ---------------- 动效质量档位 ---------------- */
@@ -2959,12 +3297,13 @@ function boot() {
   window.addEventListener('resize', () => { applyCamera(); drawMinimap(); });
   window.addEventListener('beforeunload', () => { try { save(); } catch (e) { } });
 
-  // 云同步：填过空间码就自动连上；定时拉取 + 切回前台时拉一次
+  // 目录与云同步：先把旧配置读出来（迁移要用），但先别急着同步
   loadCloudCfg();
+  cloud.on = false;                       // 等真正打开某份 canvas 才连上
+  buildLockMarks();
   updateCloudUi();
-  if (cloud.on && cloud.key) {
-    cloudConnect(cloud.key, true).catch(() => { cloud.on = false; saveCloudCfg(); updateCloudUi(); });
-  }
+  if (lockNeeded()) openLockScreen('check', '按顺序点击符号解锁');   // 锁着不发任何请求
+  else libBoot().catch(err => { console.warn('目录载入失败', err); });
 }
 
 /* 编辑时同步文本（轻量级，避免频繁入栈） */
