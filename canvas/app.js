@@ -74,6 +74,7 @@ const LIB_LOCAL = 'canvas.lib.local';
 
 const state = {
   boards: [],
+  tomb: [],                 // 已删除场景的墓碑 [{id, t}]，多端合并时靠它判断「是被删了，还是新加的」
   activeId: null,
   camera: { x: 0, y: 0, scale: 1 },
   tool: 'select',
@@ -100,6 +101,10 @@ const findEl = id => els().find(e => e.id === id);
 let saveTimer = null, saveStateEl = $('#saveState');
 
 function markDirty() {
+  // 给当前场景打时间戳：合并时靠它判断「哪边是新的」，
+  // 这样两端同时改不同场景时，两边都能留下（不再整份覆盖）
+  const b = board && state.activeId ? board() : null;
+  if (b) b.mt = Date.now();
   saveStateEl.textContent = '保存中…';
   saveStateEl.classList.add('saving');
   clearTimeout(saveTimer);
@@ -109,7 +114,7 @@ function markDirty() {
 function save() {
   const active = board();
   if (active) { active.camera = { ...state.camera }; }
-  const payload = { v: 1, activeId: state.activeId, boards: state.boards };
+  const payload = { v: 1, activeId: state.activeId, boards: state.boards, tomb: state.tomb || [] };
   let str;
   try { str = JSON.stringify(payload); } catch (e) { return; }
   try {
@@ -149,6 +154,7 @@ function load() {
   try { data = JSON.parse(localStorage.getItem(storeKey()) || 'null'); } catch (e) { data = null; }
   if (data && Array.isArray(data.boards) && data.boards.length) {
     state.boards = data.boards;
+    state.tomb = Array.isArray(data.tomb) ? data.tomb : [];
     state.activeId = data.activeId && data.boards.some(b => b.id === data.activeId) ? data.activeId : data.boards[0].id;
     state.fresh = false;
   } else {
@@ -2090,6 +2096,9 @@ function renderBoardList() {
         if (state.boards.length === 1) return showToast('至少要保留一个场景');
         pushHistory();
         state.boards = state.boards.filter(x => x.id !== b.id);
+        // 记一笔墓碑：否则别的设备不知道这个场景被删了，一合并又把它复活
+        state.tomb = (state.tomb || []).filter(t => t.id !== b.id);
+        state.tomb.push({ id: b.id, t: Date.now() });
         if (state.activeId === b.id) switchBoard(state.boards[0].id);
         else renderBoardList();
         markDirty();
@@ -2767,9 +2776,9 @@ function cloudStatus() {
   return `已连接 · 上次同步 ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
-/* 云端文档：{ data: {boards, activeId}, updatedAt } */
+/* 云端文档：{ data: {boards, tomb, activeId}, updatedAt } */
 function cloudPayload() {
-  const data = { boards: state.boards, activeId: state.activeId, v: 1 };
+  const data = { boards: state.boards, tomb: state.tomb || [], activeId: state.activeId, v: 1 };
   const txt = JSON.stringify(data);
   if (txt.length <= 2600000) return { data };
   // 太大就只同步结构（图片留在各设备），避免超出云函数请求体限制
@@ -2783,10 +2792,22 @@ async function cloudPush() {
   cloud.busy = true;
   try {
     const { data } = cloudPayload();
+    /* 先读再写：不这么做的话，一个「开着好几天的旧页面」一改动就会把云端新内容整份盖掉，
+       这正是用户说的「很容易冲突」的主要来源 */
+    let toWrite = data;
+    try {
+      const cur = await cloudGet(cloud.key);
+      if (cur && cur.data && Array.isArray(cur.data.boards)) {
+        const merged = mergeBoards(data.boards, data.tomb, cur.data.boards, cur.data.tomb);
+        toWrite = { boards: merged.boards, tomb: merged.tomb, activeId: data.activeId, v: 1 };
+        // 合并结果如果跟本机不一样，也让本机看到（否则本机下次推还会再盖回去）
+        if (applyMerged(merged)) showToast('已并入云端的改动');
+      }
+    } catch (e) { /* 读不到就照原样写 */ }
     const r = await fetch(CLOUD_API, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ key: cloud.key, data }),
+      body: JSON.stringify({ key: cloud.key, data: toWrite }),
     });
     const j = await r.json().catch(() => null);
     if (j && j.ok) {
@@ -2808,7 +2829,71 @@ async function cloudPush() {
   }
 }
 
-/* 拉取：云端更新才覆盖本地；图片若云端没有而本机有，则保留本机的 */
+/* ------------------------------------------------------------------
+   多端合并：以前是「整份文档后写覆盖先写」，两端一改就互相抹掉。
+   现在改成按场景粒度合并：每个场景自带 mt 时间戳，新的留下、旧的让位，
+   于是「手机改 A 场景 + 电脑改 B 场景」两边都能保住。
+   删除靠墓碑（tomb）同步，否则被删的场景会在合并时被复活。
+   ⚠️ 同一时刻改**同一个**场景仍然只能留一份（新的赢），这是单用户场景可接受的选择。
+   ------------------------------------------------------------------ */
+const boardMt = b => (b && b.mt) || 0;
+function tombAt(tomb, id) {
+  let m = 0;
+  (tomb || []).forEach(t => { if (t && t.id === id && t.t > m) m = t.t; });
+  return m;
+}
+function mergeTomb(a, b) {
+  const map = new Map();
+  [].concat(a || [], b || []).forEach(t => {
+    if (!t || !t.id) return;
+    const cur = map.get(t.id);
+    if (!cur || (t.t || 0) > (cur.t || 0)) map.set(t.id, t);
+  });
+  return [...map.values()];
+}
+function mergeBoards(localBoards, localTomb, cloudBoards, cloudTomb) {
+  const tomb = mergeTomb(localTomb, cloudTomb);
+  const order = [];                                  // 先按本机顺序排，云端新增的排后面
+  const map = new Map();
+  (localBoards || []).forEach(b => { if (b && b.id) { map.set(b.id, b); order.push(b.id); } });
+  (cloudBoards || []).forEach(b => {
+    if (!b || !b.id) return;
+    const cur = map.get(b.id);
+    if (!cur) {
+      if (tombAt(tomb, b.id) <= boardMt(b)) { map.set(b.id, b); order.push(b.id); }
+    } else if (boardMt(b) > boardMt(cur)) {
+      map.set(b.id, b);                              // 云端这份更新 → 采用
+    }
+  });
+  const out = [];
+  order.forEach(id => {
+    const b = map.get(id);
+    if (b && tombAt(tomb, id) <= boardMt(b)) out.push(b);
+  });
+  return { boards: out.length ? out : (localBoards || []).slice(0, 1), tomb };
+}
+/* 把合并结果写回界面 */
+function applyMerged(merged) {
+  const changed = JSON.stringify(merged.boards.map(b => b.id + ':' + boardMt(b)))
+                !== JSON.stringify(state.boards.map(b => b.id + ':' + boardMt(b)));
+  if (!changed && JSON.stringify(merged.tomb) === JSON.stringify(state.tomb || [])) return false;
+  const localSrc = new Map();
+  state.boards.forEach(b => b.elements.forEach(e => { if (e.type === 'image' && e.src) localSrc.set(e.id, e.src); }));
+  state.boards = merged.boards;
+  state.tomb = merged.tomb || [];
+  state.boards.forEach(b => b.elements.forEach(e => {
+    if (e.type === 'image' && !e.src && localSrc.has(e.id)) e.src = localSrc.get(e.id);
+  }));
+  if (!state.boards.some(b => b.id === state.activeId)) state.activeId = (state.boards[0] || {}).id;
+  cloud.applying = true;
+  renderBoard();
+  boardNameEl.value = board().name;
+  applyCamera(); drawMinimap(); renderViews();
+  lastSnapshot = snapshot();
+  cloud.applying = false;
+  return true;
+}
+
 async function cloudPull(silent) {
   if (!cloud.on || !cloud.key || cloud.busy || cloud.applying) return false;
   cloud.busy = true;
@@ -2818,26 +2903,12 @@ async function cloudPull(silent) {
     const j = await r.json();
     if (j && j.data && j.updatedAt) {
       cloud.cloudTime = j.updatedAt;
-      if (j.updatedAt > cloud.lastPush + 1500) {
-        const localSrc = new Map();
-        state.boards.forEach(b => b.elements.forEach(e => { if (e.type === 'image' && e.src) localSrc.set(e.id, e.src); }));
-        state.boards = j.data.boards || state.boards;
-        state.boards.forEach(b => b.elements.forEach(e => {
-          if (e.type === 'image' && !e.src && localSrc.has(e.id)) e.src = localSrc.get(e.id);
-        }));
-        if (j.data.activeId && state.boards.some(b => b.id === j.data.activeId)) {
-          state.activeId = j.data.activeId;
-        }
-        cloud.applying = true;
-        renderBoard();
-        boardNameEl.value = board().name;
-        applyCamera();
-        lastSnapshot = snapshot();
-        cloud.applying = false;
+      if (j.updatedAt > cloud.lastPush + 1500 && Array.isArray(j.data.boards)) {
+        const merged = mergeBoards(state.boards, state.tomb, j.data.boards, j.data.tomb);
+        applied = applyMerged(merged);
         cloud.lastPush = j.updatedAt;
         saveCloudCfg();
-        applied = true;
-        if (!silent) showToast('已从云端载入最新内容');
+        if (applied && !silent) showToast('已合并别的设备的改动');
       }
     }
   } catch (e) {
