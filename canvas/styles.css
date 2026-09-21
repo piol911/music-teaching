@@ -652,11 +652,17 @@ html[data-theme="dark"] .board-card .thumb { background: rgba(255, 255, 255, .08
   z-index: 70;
   display: none;
   align-items: center;
+  justify-content: center;
   gap: 4px;
   padding: 5px 6px;
   border-radius: 999px;
   transform-origin: 50% 100%;
+  /* 手机上按钮多，一行放不下：允许换行并限制宽度，否则会被屏幕边缘裁掉 */
+  flex-wrap: wrap;
+  row-gap: 2px;
+  max-width: calc(100vw - 16px);
 }
+.ctxbar.multi { border-radius: var(--r-md); }
 .ctxbar.show { display: flex; animation: ctxIn .34s var(--ease-spring) both; }
 @keyframes ctxIn {
   0% { opacity: 0; transform: translateY(8px) scale(.86); }
@@ -1308,3 +1314,13 @@ body.rm .ctxbar, body.rm .guides, body.rm .pres-hint, body.rm .drop-hint { displ
   font-size: 11px; display: grid; place-items: center;
 }
 .rm-back { margin-top: auto; padding: 10px; text-align: center; font-size: 12px; color: var(--text-3); }
+
+/* 手机：控制条的按钮太小不好点，放大一点；同时别贴着屏幕边 */
+@media (max-width: 700px) {
+  .ctxbar { padding: 6px 7px; gap: 6px; max-width: calc(100vw - 12px); }
+  .ctxbar .cx { width: 34px; height: 34px; border-radius: 9px; }
+  .ctxbar .cx svg { width: 18px; height: 18px; }
+  .ctxbar .cx.fs { min-width: 28px; padding: 0 8px; font-size: 13px; }
+  .ctxbar .sw { width: 24px; height: 24px; }
+  .ctxbar .cdiv { height: 20px; margin: 0 3px; }
+}

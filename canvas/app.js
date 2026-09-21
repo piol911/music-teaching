@@ -970,16 +970,28 @@ function updateCtxbar() {
   const b = bboxOf(list);
   const s = state.camera.scale;
   const sx = (b.x + b.w / 2 - state.camera.x) * s;
-  const sy = (b.y + b.h - state.camera.y) * s + 16;
-  if (sx < -80 || sx > innerWidth + 80 || sy < 40 || sy > innerHeight - 20) {
+  const topY = (b.y - state.camera.y) * s;
+  const botY = (b.y + b.h - state.camera.y) * s;
+  if (sx < -80 || sx > innerWidth + 80 || botY < 40 || topY > innerHeight - 20) {
     ctxbar.classList.remove('show');
     return;
   }
-  // 夹在屏幕内，避免工具条被左右边缘裁掉
-  const half = (ctxbar.offsetWidth || 200) / 2;
-  ctxbar.style.left = clamp(sx, half + 10, Math.max(half + 10, innerWidth - half - 10)) + 'px';
-  ctxbar.style.top = clamp(sy, 70, innerHeight - 66) + 'px';
-  ctxbar.style.transform = 'translateX(-50%)';
+  /* ⚠️ 别用 transform 做居中：入场动画 ctxIn 的 keyframes 会覆盖掉内联 transform，
+     动画那 0.34 秒里工具条是偏的，动画一结束又跳回去 —— 手机上看着就是「错位」。
+     改成直接算 left（减去自身一半宽度），把 transform 完全让给动画。 */
+  const w = ctxbar.offsetWidth || 200;
+  const h = ctxbar.offsetHeight || 38;
+  const narrow = innerWidth < 700;
+  const bottomLimit = innerHeight - (narrow ? 88 : 70);   // 手机底部还有工具栏 + 安全区
+  // 元素贴着屏幕下边时，把工具条翻到元素上方，别压在工具栏上
+  let top = botY + 16;
+  if (top > bottomLimit) top = topY - 16 - h;
+  top = clamp(top, 62, Math.max(62, bottomLimit));
+  const left = clamp(sx - w / 2, 8, Math.max(8, innerWidth - w - 8));
+  ctxbar.style.left = left + 'px';
+  ctxbar.style.top = top + 'px';
+  ctxbar.style.transform = '';
+  ctxbar.classList.toggle('multi', h > 48);              // 换成多行时收一收圆角
 }
 
 const ICON = {
