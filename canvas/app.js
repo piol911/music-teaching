@@ -2677,7 +2677,8 @@ $('#btnExitMode').addEventListener('click', () => {
   else if (state.focusId) exitFocus();
   else setImmersive(false);
 });
-presHint.addEventListener('click', () => { if (state.presenting) togglePresent(false); });
+/* 中间那条现在只是「第几个」的指示器，退出一律用左下角的 ✕ —— 不再两套控件 */
+$('#btnCloseViews').addEventListener('click', () => toggleViewsPanel(false));
 
 /* 点画布其它地方收起视图面板 */
 stage.addEventListener('pointerdown', () => { if (viewsPanel.classList.contains('show')) toggleViewsPanel(false); });
@@ -3254,6 +3255,12 @@ function renderLib() {
 }
 
 $('#btnRemote').addEventListener('click', () => setRemote(!remote.on));
+$('#btnRemoteOpen').addEventListener('click', () => {
+  const url = location.origin + location.pathname + '?remote=1';
+  try { navigator.clipboard && navigator.clipboard.writeText(url); } catch (e) { /* 忽略 */ }
+  showToast('地址已复制：' + url);
+  window.open(url, '_blank');
+});
 $('#btnCloud').addEventListener('click', async () => {
   $('#libMask').classList.add('show');
   renderLib();

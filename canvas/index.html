@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>Canvas · 无边画布</title>
-<link rel="stylesheet" href="styles.css?v=1790014106">
+<link rel="stylesheet" href="styles.css?v=1790014900">
 </head>
 <body>
 
@@ -68,6 +68,9 @@
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 6l6 6-6 6"/></svg>
   </button>
   <span class="vd-div"></span>
+  <button class="vd-add" id="btnAddView" title="记录当前视图 (⌘⇧R)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+  </button>
   <button class="vd-play" id="btnPlay" title="演示 (⌘⇧P)">
     <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.5v13l11-6.5z"/></svg>
   </button>
@@ -80,8 +83,8 @@
 <div class="views-panel glass" id="viewsPanel">
   <div class="vp-head">
     <span>视图</span>
-    <button class="btn icon sm" id="btnAddView" title="记录当前视图 (⌘⇧R)">
-      <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+    <button class="btn icon sm" id="btnCloseViews" title="收起列表">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
     </button>
   </div>
   <div class="vp-list" id="viewsList"></div>
@@ -135,6 +138,7 @@
   <div class="bp-foot">
     <button class="btn text" id="btnCloud" title="所有画布 / 云同步状态">目录</button>
     <button class="btn text" id="btnRemote" title="用手机遥控翻视图">遥控：关</button>
+    <button class="btn text" id="btnRemoteOpen" title="打开手机遥控页（地址会复制到剪贴板）">遥控页</button>
     <button class="btn text" id="btnPerfPanel" title="卡顿时切到精简">动效：自动</button>
     <button class="btn text" id="btnImport">导入</button>
     <button class="btn text" id="btnExport">导出</button>
@@ -226,14 +230,12 @@
 
 <div class="pres-hint" id="presHint">
   <span class="n" id="presN">1 / 1</span>
-  <span>‹ › 切换视图</span>
-  <span class="quit">点击退出 ✕</span>
 </div>
 <div class="toast" id="toast"></div>
 <div class="drop-hint" id="dropHint">松手即可置入</div>
 
 <input type="file" id="fileInput" accept="image/*" multiple hidden>
 
-<script src="app.js?v=1790014106"></script>
+<script src="app.js?v=1790014900"></script>
 </body>
 </html>

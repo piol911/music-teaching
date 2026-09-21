@@ -617,6 +617,7 @@
   <nav class="main">
     <ol class="list" id="list"></ol>
     <button class="add" id="addBtn">＋　添加一项</button>
+    <button class="reset" id="remoteBtn">遥控画布</button>
     <button class="reset" id="resetBtn">清空列表</button>
   </nav>
 
@@ -905,6 +906,14 @@ $('#addSave').addEventListener('click', () => {
   closeMask('#maskAdd');
   render();
   save('已添加「' + name + '」');
+});
+
+/* 编辑态里直达遥控器：省得单独记一个网址 */
+$('#remoteBtn').addEventListener('click', () => {
+  const url = location.origin + '/canvas/?remote=1';
+  try { navigator.clipboard && navigator.clipboard.writeText(url); } catch (e) { /* 忽略 */ }
+  toast('遥控地址已复制，正在打开…');
+  setTimeout(() => { location.href = url; }, 500);
 });
 
 $('#resetBtn').addEventListener('click', () => {

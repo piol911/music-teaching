@@ -931,6 +931,9 @@ html[data-theme="dark"] .vd-nav:hover { background: rgba(255, 255, 255, .1); }
 html[data-theme="dark"] .vd-count:hover { background: rgba(255, 255, 255, .1); }
 .vd-count.on { background: var(--accent); color: #fff; }
 .vd-div { width: 1px; height: 16px; background: var(--stroke-strong); margin: 0 3px; }
+.vd-add { width: 30px; height: 30px; color: var(--text-2); }
+.vd-add svg { width: 16px; height: 16px; }
+.vd-add:hover { background: var(--accent); color: #fff; }
 .vd-play { width: 30px; height: 30px; }
 .vd-play svg { width: 15px; height: 15px; }
 .vd-play:hover { background: var(--accent); color: #fff; }
@@ -1074,7 +1077,7 @@ body.presenting .minimap { opacity: 0; pointer-events: none; }
   display: none;
   align-items: center; gap: 10px;
 }
-body.presenting .pres-hint { display: flex; animation: elIn .4s var(--ease-spring) both; cursor: pointer; }
+body.presenting .pres-hint { display: flex; animation: elIn .4s var(--ease-spring) both; pointer-events: none; }
 .pres-hint .n { font-variant-numeric: tabular-nums; opacity: .75; }
 .pres-hint .quit {
   padding: 2px 9px;
