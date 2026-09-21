@@ -617,7 +617,7 @@
   <nav class="main">
     <ol class="list" id="list"></ol>
     <button class="add" id="addBtn">＋　添加一项</button>
-    <button class="reset" id="resetBtn">恢复默认列表</button>
+    <button class="reset" id="resetBtn">清空列表</button>
   </nav>
 
   <div class="spine" aria-hidden="true">
@@ -682,22 +682,29 @@
 
 <script>
 /* ============================================================
-   链接列表：默认写在下面，改过之后就存到云端（同一台设备记住空间码）
+   链接列表
+   2026-09-21 起：列表**不再写在源码里**（否则别人不用解锁、直接看网页源码就能读到）。
+   现在的顺序是：本机快照（离线也能看）→ 解锁后从云端拉取（同一空间码多设备同步）
    ============================================================ */
 const CLOUD_API = 'https://art-d9giyyspp3921f818-1312774719.ap-shanghai.app.tcloudbase.com/sync';
 const CODE_LS = 'xy6300.portal.code';
+const LINKS_LS = 'xy6300.portal.links';
 
-const DEFAULTS = [
-  { name: '无边画布',        desc: '无限画布 · 便签 / 图片 / 连线 / 思维导图 / 视图演示', href: 'canvas/' },
-  { name: '音乐教学演示台',  desc: '课程单元管理 · 内容存在阿里云 OSS',                  href: 'music/' },
-  { name: '我的小站',        desc: '自我介绍页，带一个 B 站视频',                        href: 'https://piol911.github.io/me/' },
-  { name: '我的小站 · 简版', desc: '早期的极简版本，只有一段欢迎文字',                   href: 'https://piol911.github.io/XY/' }
-];
+const DEFAULTS = [];   // 故意留空：入口不出现在任何人都能读到的源码里
 
 let links = DEFAULTS.slice();
 let code = '';
 let editing = false;
 try { code = localStorage.getItem(CODE_LS) || ''; } catch (e) { /* 无痕模式等 */ }
+
+/* 本机快照：没网的时候也能看到上次同步过的列表 */
+function saveLocal() {
+  try { localStorage.setItem(LINKS_LS, JSON.stringify(links)); } catch (e) { /* 忽略 */ }
+}
+try {
+  const raw = localStorage.getItem(LINKS_LS);
+  if (raw) { const a = JSON.parse(raw); if (Array.isArray(a)) links = a; }
+} catch (e) { /* 忽略 */ }
 
 const $ = s => document.querySelector(s);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -707,7 +714,7 @@ const two = n => String(n + 1).padStart(2, '0');
 function render() {
   const list = $('#list');
   if (!links.length) {
-    list.innerHTML = '<li class="empty">还没有内容。点右上角「编辑」→「添加一项」。</li>';
+    list.innerHTML = '<li class="empty">这里是空的。点右上角「编辑」，先填<b>空间码</b>，列表会从云端取回来。</li>';
   } else {
     list.innerHTML = links.map((it, i) => {
       const d = Math.min(i, 12) * 70 + 140;
@@ -752,13 +759,25 @@ async function pull() {
     const j = await r.json();
     if (j && j.data && Array.isArray(j.data.links)) {
       links = j.data.links;
+      saveLocal();
       render();
     }
     if (j && j.data && ('lock' in j.data)) {   // 明确写了 null 才算「取消密码」
       lockCfg = j.data.lock || null;
       saveLockLocal();
+      syncLockBtn();
     }
   } catch (e) { /* 离线时就用默认/本地这份，不打扰 */ }
+}
+
+/* 带重试的拉取：网络抖动时不至于白屏。每次打开页面都会走这里 */
+async function pullRetry(n = 3) {
+  for (let i = 0; i < n; i++) {
+    await pull();
+    if (links.length) return true;
+    await new Promise(r => setTimeout(r, 600 * (i + 1)));
+  }
+  return false;
 }
 
 async function push() {
@@ -817,15 +836,20 @@ $('#editBtn').addEventListener('click', () => {
 $('#codeOk').addEventListener('click', async () => {
   const v = $('#fCode').value.trim();
   if (!/^[A-Za-z0-9_-]{3,64}$/.test(v)) { toast('空间码至少 3 位，只能用字母、数字、- 和 _'); return; }
+  const prev = links.slice();          // 换空间码前先留住本机这份，免得换了码就空了
   code = v;
   try { localStorage.setItem(CODE_LS, code); } catch (e) { /* 忽略 */ }
   closeMask('#maskCode');
   await pull();
+  if (!links.length && prev.length) {  // 云端还是空的 → 把本机列表搬过去
+    links = prev; saveLocal(); render();
+    await push();
+  }
   editing = true;
   document.body.classList.add('editing');
   $('#editBtn').textContent = '完成';
   $('#editBtn').setAttribute('aria-pressed', 'true');
-  toast('已开启编辑');
+  toast(prev.length && links === prev ? '已绑定，列表搬过来了' : '已绑定，拉到 ' + links.length + ' 项');
 });
 $('#codeCancel').addEventListener('click', () => closeMask('#maskCode'));
 
@@ -844,15 +868,19 @@ $('#addSave').addEventListener('click', () => {
   // 看起来不是网址也不是相对路径的话，补上 https://
   if (!/^(https?:|\/|\.)/.test(href) && !href.includes('/')) href = 'https://' + href + '/';
   links.push({ name, href, desc });
+  saveLocal();
   closeMask('#maskAdd');
   render();
   save('已添加「' + name + '」');
 });
 
 $('#resetBtn').addEventListener('click', () => {
-  links = DEFAULTS.slice();
+  if (!links.length) { toast('已经是空的了'); return; }
+  if (!confirm('清掉全部 ' + links.length + ' 项？云端也会一起清掉，建议先记下来。')) return;
+  links = [];
+  saveLocal();
   render();
-  save('已恢复默认列表');
+  save('已清空');
 });
 
 document.querySelectorAll('.mask').forEach(m => {
@@ -990,6 +1018,7 @@ function closeLock() {
   document.body.style.overflow = '';
   chain = []; firstSeq = null;
   try { sessionStorage.setItem(UNLOCK_SS, '1'); } catch (e) { /* 忽略 */ }
+  startSync();          // 解锁后才去取列表（锁着的时候不发任何请求）
 }
 
 function fail(msg) {
@@ -1101,13 +1130,22 @@ function syncLockBtn() {
 buildMarks();
 render();
 syncLockBtn();
+
+/* 同步时机：解锁后立刻拉一次（带重试）；切回前台再拉；页面开着每 90 秒拉一次 */
+let syncStarted = false;
+function startSync() {
+  if (!code) return;
+  syncStarted = true;
+  pullRetry().then(() => { if (presetJustInstalled) push(); });
+}
 (function bootLock() {
   let unlocked = false;
   try { unlocked = sessionStorage.getItem(UNLOCK_SS) === '1'; } catch (e) { /* 忽略 */ }
-  if (lockCfg && !unlocked) openLock('check', '按顺序点击符号解锁');
+  if (lockCfg && !unlocked) openLock('check', '按顺序点击符号解锁');   // 锁着就先不同步
+  else startSync();
 })();
-// 有空间码就拉一次云端；刚装上出厂密码的话顺便写回去，别的设备才能同步到
-if (code) Promise.resolve(pull()).then(() => { if (presetJustInstalled) push(); });
+document.addEventListener('visibilitychange', () => { if (!document.hidden) startSync(); });
+setInterval(() => { if (!document.hidden && code) pull(); }, 90000);
 </script>
 </body>
 </html>
