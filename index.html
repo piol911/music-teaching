@@ -649,27 +649,12 @@
   </div>
 </div>
 
-<!-- 输入空间码 -->
-<div class="mask" id="maskCode">
-  <div class="sheet">
-    <h2>开启编辑</h2>
-    <p class="hint">
-      链接列表存在云端，这样手机上加的，电脑上也能看到。<br>
-      填一个只有你知道的<b>空间码</b>即可（可以和画布用同一个，数据会自动分开存放）。
-    </p>
-    <label class="field"><span>空间码</span><input id="fCode" placeholder="例如 lxy-2026" autocomplete="off"></label>
-    <div class="acts">
-      <button id="codeCancel">取消</button>
-      <button class="primary" id="codeOk">确定</button>
-    </div>
-  </div>
-</div>
-
-<!-- 找回图案密码：空间码对得上就清除 -->
+<!-- 忘记图案顺序时用：对上空间码就清除（空间码已内置，解锁后可在「改图案」面板里看到） -->
 <div class="mask" id="maskReset">
   <div class="sheet">
     <h2>忘记顺序了</h2>
-    <p class="hint">填你自己的<b>空间码</b>验证一下，对得上就清除图案密码，之后可以重新设置。</p>
+    <p class="hint">填<b>空间码</b>验证一下，对得上就清除图案密码，之后可以重新设置。<br>
+      空间码已经内置在页面里，解锁后点「改图案」就能看到它。</p>
     <label class="field"><span>空间码</span><input id="fUnlock" placeholder="当初填的那个" autocomplete="off"></label>
     <div class="acts">
       <button id="resetCancel">取消</button>
@@ -690,12 +675,16 @@ const CLOUD_API = 'https://art-d9giyyspp3921f818-1312774719.ap-shanghai.app.tclo
 const CODE_LS = 'xy6300.portal.code';
 const LINKS_LS = 'xy6300.portal.links';
 
+/* 2026-09-21 起不再让你填空间码：钥匙写在页面里，打开就用。
+   和画布一样的思路——私人工具不该把「记不记得住」当成数据安全的前提。
+   空间码现在只剩一个用途：忘记图案顺序时用来清除密码。 */
+const PORTAL_KEY = '5XpKkMNG7Th3AKpdDzyRRbybHd3e';
+
 const DEFAULTS = [];   // 故意留空：入口不出现在任何人都能读到的源码里
 
 let links = DEFAULTS.slice();
-let code = '';
+const code = PORTAL_KEY;
 let editing = false;
-try { code = localStorage.getItem(CODE_LS) || ''; } catch (e) { /* 无痕模式等 */ }
 
 /* 本机快照：没网的时候也能看到上次同步过的列表 */
 function saveLocal() {
@@ -714,7 +703,7 @@ const two = n => String(n + 1).padStart(2, '0');
 function render() {
   const list = $('#list');
   if (!links.length) {
-    list.innerHTML = '<li class="empty">这里是空的。点右上角「编辑」，先填<b>空间码</b>，列表会从云端取回来。</li>';
+    list.innerHTML = '<li class="empty">这里是空的。点右上角「编辑」→「添加一项」。<br>如果别的设备已经加过，稍等几秒会自动同步过来。</li>';
   } else {
     list.innerHTML = links.map((it, i) => {
       const d = Math.min(i, 12) * 70 + 140;
@@ -824,7 +813,6 @@ $('#editBtn').addEventListener('click', () => {
     $('#stateFoot').textContent = '已同步';
     return;
   }
-  if (!code) { $('#fCode').value = ''; openMask('#maskCode'); setTimeout(() => $('#fCode').focus(), 400); return; }
   editing = true;
   document.body.classList.add('editing');
   $('#editBtn').textContent = '完成';
@@ -832,26 +820,6 @@ $('#editBtn').addEventListener('click', () => {
   $('#state').textContent = '编辑中';
   $('#stateFoot').textContent = '编辑中';
 });
-
-$('#codeOk').addEventListener('click', async () => {
-  const v = $('#fCode').value.trim();
-  if (!/^[A-Za-z0-9_-]{3,64}$/.test(v)) { toast('空间码至少 3 位，只能用字母、数字、- 和 _'); return; }
-  const prev = links.slice();          // 换空间码前先留住本机这份，免得换了码就空了
-  code = v;
-  try { localStorage.setItem(CODE_LS, code); } catch (e) { /* 忽略 */ }
-  closeMask('#maskCode');
-  await pull();
-  if (!links.length && prev.length) {  // 云端还是空的 → 把本机列表搬过去
-    links = prev; saveLocal(); render();
-    await push();
-  }
-  editing = true;
-  document.body.classList.add('editing');
-  $('#editBtn').textContent = '完成';
-  $('#editBtn').setAttribute('aria-pressed', 'true');
-  toast(prev.length && links === prev ? '已绑定，列表搬过来了' : '已绑定，拉到 ' + links.length + ' 项');
-});
-$('#codeCancel').addEventListener('click', () => closeMask('#maskCode'));
 
 $('#addBtn').addEventListener('click', () => {
   $('#fName').value = ''; $('#fHref').value = ''; $('#fDesc').value = '';
@@ -1108,7 +1076,8 @@ $('#resetCancel').addEventListener('click', () => closeMask('#maskReset'));
 
 $('#lockMgr').addEventListener('click', () => {
   openLock(lockCfg ? 'manage' : 'new',
-           lockCfg ? '已开启。可以换顺序或取消。' : '点 3～8 个符号，记住顺序');
+           lockCfg ? '已开启。可以换顺序或取消。\n找回用的空间码：' + code
+                   : '点 3～8 个符号，记住顺序');
 });
 
 /* ---------------- 时钟 ---------------- */
