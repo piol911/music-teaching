@@ -2669,7 +2669,10 @@ vdCount.addEventListener('click', () => toggleViewsPanel());
 $('#btnPrevView').addEventListener('click', () => stepView(-1));
 $('#btnNextView').addEventListener('click', () => stepView(1));
 $('#btnAddView').addEventListener('click', captureView);
-$('#btnPlay').addEventListener('click', () => togglePresent());
+$('#btnPlay').addEventListener('click', () => {
+  togglePresent();
+  if (state.presenting) goFullscreen();     // 开始演示顺带全屏（同一手势内，允许）
+});
 
 /* 退出键：手机没有 Esc，演示 / 聚焦时靠它回到正常模式 */
 $('#btnExitMode').addEventListener('click', () => {
@@ -3091,6 +3094,25 @@ async function remoteTick() {
     remotePublish();          // 立刻回写状态，手机端马上看到新位置
   } catch (e) { /* 忽略 */ }
 }
+/* ---------------- 全屏 ----------------
+   ⚠️ 必须由「用户手势」触发（点一下），放在定时器里调用会被浏览器拒绝。
+   iPhone 上的 Safari 压根不支持网页全屏，只能靠「添加到主屏幕」兜底。 */
+const fsEl = () => document.documentElement;
+const fsSupported = () => !!(fsEl().requestFullscreen || fsEl().webkitRequestFullscreen || fsEl().webkitRequestFullScreen);
+function fsNow() { return document.fullscreenElement || document.webkitFullscreenElement || null; }
+function goFullscreen() {
+  const el = fsEl();
+  const req = el.requestFullscreen || el.webkitRequestFullscreen || el.webkitRequestFullScreen;
+  if (!req) return false;
+  try { const p = req.call(el); if (p && p.catch) p.catch(() => { /* 不允许就拉倒 */ }); return true; }
+  catch (e) { return false; }
+}
+function exitFullscreen() {
+  const ex = document.exitFullscreen || document.webkitExitFullscreen || document.webkitCancelFullScreen;
+  if (ex && fsNow()) { try { const p = ex.call(document); if (p && p.catch) p.catch(() => {}); } catch (e) { /* 忽略 */ } }
+}
+function toggleFullscreen() { if (fsNow()) exitFullscreen(); else goFullscreen(); }
+
 async function setRemote(on) {
   remote.on = on;
   clearInterval(remote.tCmd); clearInterval(remote.tHost);
@@ -3100,6 +3122,7 @@ async function setRemote(on) {
     await remotePublish();
     remote.tCmd = setInterval(remoteTick, 1200);
     remote.tHost = setInterval(() => remotePublish(), 2500);
+    goFullscreen();      // 开遥控就全屏（这次调用还在点击的上下文里，浏览器允许）
     showToast('遥控已开：手机打开 ' + location.origin + location.pathname + '?remote=1');
   } else {
     await remotePublish(true);
@@ -3140,7 +3163,8 @@ function startRemoteMode() {
   const el = document.createElement('div');
   el.id = 'rmui';
   el.innerHTML =
-    '<div class="rm-head"><span class="rm-brand">XY<i>.</i>6300</span><span class="rm-tag">遥控</span></div>' +
+    '<div class="rm-head"><span class="rm-brand">XY<i>.</i>6300</span><span class="rm-tag">遥控</span>' +
+    '<button class="rm-fs" id="rmFs" data-op="fs">全屏</button></div>' +
     '<div class="rm-status" id="rmStatus">正在连接…</div>' +
     '<div class="rm-pad">' +
       '<button class="rm-btn" data-op="prev" aria-label="上一个">&#8249;</button>' +
@@ -3154,11 +3178,23 @@ function startRemoteMode() {
     const b = e.target.closest('[data-op]');
     if (!b) return;
     const op = b.dataset.op;
+    if (op === 'fs') { toggleFullscreen(); return; }   // 切换全屏，不发指令
     if (op === 'play') rmSend(b.dataset.playing === '1' ? 'exit' : 'play');
     else rmSend(op, b.dataset.idx);
   });
+  const fsb = $('#rmFs');
+  if (fsb) {
+    if (fsSupported()) fsb.textContent = fsNow() ? '退出全屏' : '全屏';
+    else { fsb.textContent = '加到主屏幕可全屏'; fsb.disabled = true; }
+  }
+  document.addEventListener('fullscreenchange', syncFsBtn);
+  document.addEventListener('webkitfullscreenchange', syncFsBtn);
   rmPoll();
   setInterval(rmPoll, 2000);
+}
+function syncFsBtn() {
+  const fsb = $('#rmFs');
+  if (fsb && fsSupported()) fsb.textContent = fsNow() ? '退出全屏' : '全屏';
 }
 
 async function libOpen(id, quiet) {
@@ -3421,6 +3457,8 @@ function lockTap(i) {
   if (lockStage === 'check') {
     if (lockCfg && lockDigest(lockChain, lockCfg.salt) === lockCfg.h) {
       setLockMsg('好');
+      // 全屏必须在这次点击的上下文里申请；放进 setTimeout 就不算用户手势了
+      if (REMOTE) goFullscreen();
       setTimeout(closeLockScreen, 260);
     } else if (lockCfg && lockChain.length >= lockCfg.len) lockFail();
   }
