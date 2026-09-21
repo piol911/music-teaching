@@ -64,8 +64,11 @@ const storeKey = wid => STORE_PREFIX + (wid || lib.wid || 'default');
    ⚠️ 钥匙在源码里，所以这仍是「帘子」不是「保险柜」——挡随手点开，挡不住翻源码的人。
    ------------------------------------------------------------------ */
 const LIB = 'KxYFxLLoHCa3HHfkmVaMXQXXHzXh';
-const LIB_INDEX_KEY = 'cl:' + LIB;                       // 目录本身
-const LIB_ITEM_KEY = id => 'cl:' + LIB + ':' + id;       // 单份作品
+/* ⚠️ 键只能用 [A-Za-z0-9_-]，最长 64 位 —— 云函数 wb_sync 的 validKey 就是这么校验的。
+   早先用冒号分隔，结果每次写回都被 400 bad key 拒掉（而且是静默失败），
+   于是每台设备各建各的目录，看起来就像「手机和电脑不同步」。别再改回冒号。 */
+const LIB_INDEX_KEY = 'cl-' + LIB;                        // 目录本身
+const LIB_ITEM_KEY = id => 'cl-' + LIB + '-' + id;        // 单份作品
 const LIB_CFG = 'canvas.lib.cfg';
 const LIB_LOCAL = 'canvas.lib.local';
 
@@ -2756,6 +2759,7 @@ async function cloudMigrateImages() {
 function cloudStatus() {
   if (!cloud.on || !cloud.key) return '未开启';
   if (cloud.busy) return '同步中…';
+  if (cloud.pushFail) return '没同步上 · 检查网络';   // 让失败看得见，不要再静默
   const t = cloud.lastPush || cloud.cloudTime;
   if (!t) return '已连接';
   const d = new Date(t);
@@ -2788,9 +2792,15 @@ async function cloudPush() {
     if (j && j.ok) {
       cloud.lastPush = j.updatedAt || Date.now();
       cloud.cloudTime = Math.max(cloud.cloudTime, cloud.lastPush);
+      cloud.pushFail = false;
       saveCloudCfg();
+    } else if (j && j.error) {
+      // 别再静默失败：上一次就是因为 400 被悄悄吞掉，才变成「手机电脑不同步」
+      cloud.pushFail = true;
+      console.warn('云同步写入被拒：' + j.error);
     }
   } catch (e) {
+    cloud.pushFail = true;
     console.warn('云同步写入失败', e);
   } finally {
     cloud.busy = false;
@@ -2882,13 +2892,32 @@ async function libPullIndex() {
     const j = await cloudGet(LIB_INDEX_KEY);
     if (j && j.data && Array.isArray(j.data.items)) lib.items = j.data.items;
   } catch (e) { /* 离线就用本机那份 */ }
-  if (!lib.items.length) lib.items = libReadLocal();
+  // 本机多出来的（比如某台设备离线时自己建的那份）也并进目录，
+  // 顺便把它的内容补传给云端 —— 否则那台设备上的东西就永远躺在暗处
+  const local = libReadLocal();
+  const extra = local.filter(x => !lib.items.some(y => y.id === x.id));
+  if (extra.length) {
+    for (const m of extra) {
+      try {
+        const raw = localStorage.getItem(storeKey(m.id));
+        if (raw) {
+          const d = JSON.parse(raw);
+          await cloudSet(LIB_ITEM_KEY(m.id), { v: 1, boards: d.boards || [], activeId: d.activeId });
+        }
+      } catch (e) { /* 忽略 */ }
+      const clash = lib.items.some(y => y.name === m.name);
+      lib.items.push(Object.assign({}, m, { name: clash ? m.name + '（本机）' : m.name }));
+    }
+  }
+  if (!lib.items.length) lib.items = local;
   libWriteLocal();
 }
 async function libPushIndex() {
   try {
     const j = await cloudSet(LIB_INDEX_KEY, { v: 1, items: lib.items, active: lib.wid });
-    return !!(j && j.ok);
+    const ok = !!(j && j.ok);
+    if (!ok && !cloud.idxWarned) { cloud.idxWarned = true; showToast('目录没写回云端（键可能不合法）'); }
+    return ok;
   } catch (e) { return false; }
 }
 
