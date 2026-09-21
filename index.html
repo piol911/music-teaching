@@ -746,7 +746,7 @@ const recKey = () => code + '--portal';      // 和画布的数据分开存，�
    现在按「地址」为键逐条合并，带时间戳的新的赢；删除靠墓碑同步。
    ------------------------------------------------------------------ */
 const TOMB_LS = 'xy6300.portal.linkstomb';
-let linkTomb = [];
+let linkTomb = [], lastPullAt = 0;
 function saveTomb() { try { localStorage.setItem(TOMB_LS, JSON.stringify(linkTomb)); } catch (e) { /* 忽略 */ } }
 try { const _t = JSON.parse(localStorage.getItem(TOMB_LS) || '[]'); if (Array.isArray(_t)) linkTomb = _t; } catch (e) { /* 忽略 */ }
 
@@ -784,6 +784,7 @@ async function pull() {
   try {
     const r = await fetch(CLOUD_API + '?key=' + encodeURIComponent(recKey()), { cache: 'no-store' });
     const j = await r.json();
+    lastPullAt = Date.now();
     if (j && j.data && Array.isArray(j.data.links)) {
       // 合并而不是覆盖：本机加的和别处加的都要留着
       const m = mergeLinks(links, linkTomb, j.data.links, j.data.tomb);
@@ -814,19 +815,22 @@ async function pullRetry(n = 3) {
 async function push() {
   if (!code) return false;
   try {
-    /* 先读再写：否则一个很久没动的旧页面一保存，就会把别处的改动整份盖掉 */
+    /* 先读再写能避免旧页面盖新内容，但多一次往返；刚拉过就不必再读（既快又省请求） */
+    const fresh = Date.now() - (lastPullAt || 0) < 5000;
     let toWrite = { v: 1, links, tomb: linkTomb, lock: lockCfg };
-    try {
-      const cur = await fetch(CLOUD_API + '?key=' + encodeURIComponent(recKey()), { cache: 'no-store' });
-      const cj = await cur.json();
-      if (cj && cj.data && Array.isArray(cj.data.links)) {
-        const m = mergeLinks(links, linkTomb, cj.data.links, cj.data.tomb);
-        toWrite = { v: 1, links: m.links, tomb: m.tomb, lock: lockCfg };
-        if (JSON.stringify(m.links.map(x => x.href)) !== JSON.stringify(links.map(x => x.href))) {
-          links = m.links; linkTomb = m.tomb; saveTomb(); saveLocal(); render();
+    if (!fresh) {
+      try {
+        const cur = await fetch(CLOUD_API + '?key=' + encodeURIComponent(recKey()), { cache: 'no-store' });
+        const cj = await cur.json();
+        if (cj && cj.data && Array.isArray(cj.data.links)) {
+          const m = mergeLinks(links, linkTomb, cj.data.links, cj.data.tomb);
+          toWrite = { v: 1, links: m.links, tomb: m.tomb, lock: lockCfg };
+          if (JSON.stringify(m.links.map(x => x.href)) !== JSON.stringify(links.map(x => x.href))) {
+            links = m.links; linkTomb = m.tomb; saveTomb(); saveLocal(); render();
+          }
         }
-      }
-    } catch (e) { /* 读不到就照原样写 */ }
+      } catch (e) { /* 读不到就照原样写 */ }
+    }
     const r = await fetch(CLOUD_API, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1177,7 +1181,9 @@ function startSync() {
   else startSync();
 })();
 document.addEventListener('visibilitychange', () => { if (!document.hidden) startSync(); });
-setInterval(() => { if (!document.hidden && code) pull(); }, 90000);
+window.addEventListener('focus', () => { if (!document.hidden) startSync(); });
+/* 页面开着时每 8 秒拉一次（只在可见时），切回前台/切回窗口各补一次 */
+setInterval(() => { if (!document.hidden && code) pull(); }, 8000);
 </script>
 </body>
 </html>

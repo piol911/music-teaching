@@ -2688,10 +2688,13 @@ function saveCloudCfg() {
 }
 function ensureCloudTimers() {
   if (cloudPullTimer) return;
-  cloudPullTimer = setInterval(() => { if (cloud.on) cloudPull(true); }, 20000);
+  /* 只有窗口可见时才轮询：后台标签页没必要一直拉（切回来时下面的 focus / visibilitychange 会补一次） */
+  cloudPullTimer = setInterval(() => { if (cloud.on && !document.hidden) cloudPull(true); }, 5000);
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden && cloud.on) cloudPull(true);
   });
+  // 从别的窗口切回来时立刻拉一次（visibilitychange 只在同一标签页内可靠）
+  window.addEventListener('focus', () => { if (cloud.on && !document.hidden) cloudPull(true); });
 }
 
 async function cloudConnect(key, quiet) {
@@ -2792,18 +2795,21 @@ async function cloudPush() {
   cloud.busy = true;
   try {
     const { data } = cloudPayload();
-    /* 先读再写：不这么做的话，一个「开着好几天的旧页面」一改动就会把云端新内容整份盖掉，
-       这正是用户说的「很容易冲突」的主要来源 */
+    /* 先读再写能避免旧页面盖新内容，但会多一次往返。
+       刚拉过（5 秒内）就说明手里这份是新的，直接写 —— 既快又省一半请求 */
+    const fresh = Date.now() - (cloud.lastPullAt || 0) < 5000;
     let toWrite = data;
-    try {
-      const cur = await cloudGet(cloud.key);
-      if (cur && cur.data && Array.isArray(cur.data.boards)) {
-        const merged = mergeBoards(data.boards, data.tomb, cur.data.boards, cur.data.tomb);
-        toWrite = { boards: merged.boards, tomb: merged.tomb, activeId: data.activeId, v: 1 };
-        // 合并结果如果跟本机不一样，也让本机看到（否则本机下次推还会再盖回去）
-        if (applyMerged(merged)) showToast('已并入云端的改动');
-      }
-    } catch (e) { /* 读不到就照原样写 */ }
+    if (!fresh) {
+      try {
+        const cur = await cloudGet(cloud.key);
+        if (cur && cur.data && Array.isArray(cur.data.boards)) {
+          const merged = mergeBoards(data.boards, data.tomb, cur.data.boards, cur.data.tomb);
+          toWrite = { boards: merged.boards, tomb: merged.tomb, activeId: data.activeId, v: 1 };
+          // 合并结果如果跟本机不一样，也让本机看到（否则本机下次推还会再盖回去）
+          if (applyMerged(merged)) showToast('已并入云端的改动');
+        }
+      } catch (e) { /* 读不到就照原样写 */ }
+    }
     const r = await fetch(CLOUD_API, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -2903,6 +2909,7 @@ async function cloudPull(silent) {
     const j = await r.json();
     if (j && j.data && j.updatedAt) {
       cloud.cloudTime = j.updatedAt;
+      cloud.lastPullAt = Date.now();
       if (j.updatedAt > cloud.lastPush + 1500 && Array.isArray(j.data.boards)) {
         const merged = mergeBoards(state.boards, state.tomb, j.data.boards, j.data.tomb);
         applied = applyMerged(merged);
@@ -2923,7 +2930,9 @@ async function cloudPull(silent) {
 function scheduleCloudPush() {
   if (!cloud.on || !cloud.key || cloud.applying) return;
   clearTimeout(cloudPushTimer);
-  cloudPushTimer = setTimeout(() => cloudPush(), 2200);
+  /* 一个人用，同步越快越好体验：本机落盘 500ms + 推云端 700ms。
+     700ms 而不是立刻推，是为了把连续拖拽/输入合成一次请求（否则每帧一个请求，反而拖慢） */
+  cloudPushTimer = setTimeout(() => cloudPush(), 700);
 }
 
 /* ============================================================
