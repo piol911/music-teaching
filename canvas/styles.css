@@ -1317,3 +1317,13 @@ body.rm .ctxbar, body.rm .guides, body.rm .drop-hint { display: none !important;
 .rm-btn.stop { min-height: 52px; font-size: 15px; width: 100%; }
 .rm-btn.stop:disabled { opacity: .38; background: var(--surface-solid); }
 .rm-btn.stop.on { border-color: var(--accent); color: var(--accent); }
+
+/* 视图面板里的「跨屏适配」开关 */
+.vp-fit {
+  appearance: none; margin-left: auto;
+  padding: 3px 9px; border-radius: 100px;
+  border: 1px solid var(--stroke-strong); background: none;
+  color: var(--text-2); font: inherit; font-size: 11px; cursor: pointer;
+  white-space: nowrap;
+}
+.vp-fit:hover { color: var(--text); border-color: var(--text-3); }

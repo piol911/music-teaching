@@ -2606,19 +2606,58 @@ function markActiveView() {
 }
 
 /* 距离远或缩放跨度大 → 走「拉远—推进」的弧线，长距离跳转也不晕 */
+/* ------------------------------------------------------------------
+   视图的跨屏一致
+   以前只存「相机中心 + 缩放倍数」，同样一组数字在手机（细长）和电脑（宽扁）上
+   看到的范围完全不同 —— 手机上看着正好，电脑上左右多出一大片。
+   现在额外记下「当时屏幕上显示的是哪一块世界区域」（rw / rh），
+   回放时按当前窗口把它整块装进屏幕（contain），比例再不同也能看到同一片内容。
+   ------------------------------------------------------------------ */
+let viewFit = localStorage.getItem('canvas.viewFit') !== 'off';   // 默认开
+
+function setViewFit(on) {
+  viewFit = on;
+  localStorage.setItem('canvas.viewFit', on ? 'on' : 'off');
+  const btn = $('#btnViewFit');
+  if (btn) btn.textContent = '跨屏适配：' + (on ? '开' : '关');
+  showToast(on ? '视图会按当前屏幕自动缩放，各设备看到的内容一致' : '视图按记录时的倍数显示');
+}
+
+/* 把某个视图换算成「当前窗口下」的相机参数 */
+function viewTarget(v) {
+  if (!viewFit || !v || !v.rw || !v.rh) return { x: v.x, y: v.y, scale: v.scale };
+  // 留一点余量（0.94），免得内容紧贴屏幕边；再夹进缩放上下限
+  const s = Math.min(innerWidth / v.rw, innerHeight / v.rh) * 0.94;
+  return { x: v.rx != null ? v.rx : v.x, y: v.ry != null ? v.ry : v.y, scale: clamp(s, MIN_SCALE, MAX_SCALE) };
+}
+
+/* 旧视图只有 x/y/scale：按当前屏幕补出它当时大致覆盖的区域（标注 est 便于日后重录） */
+function migrateViews() {
+  let n = 0;
+  state.boards.forEach(b => (b.views || []).forEach(v => {
+    if (!v.rw || !v.rh) {
+      const s = v.scale || state.camera.scale || 1;
+      v.rx = v.x; v.ry = v.y; v.rw = innerWidth / s; v.rh = innerHeight / s; v.est = true;
+      n++;
+    }
+  }));
+  return n;
+}
+
 function gotoView(i) {
   const v = (board().views || [])[i];
   if (!v) return;
   state.presentIdx = i;
   if (state.editingId) exitEdit();
   clearSelection();
-  const dist = Math.hypot(v.x - state.camera.x, v.y - state.camera.y) * state.camera.scale;
-  const ratio = Math.max(state.camera.scale / v.scale, v.scale / state.camera.scale);
+  const t = viewTarget(v);
+  const dist = Math.hypot(t.x - state.camera.x, t.y - state.camera.y) * state.camera.scale;
+  const ratio = Math.max(state.camera.scale / t.scale, t.scale / state.camera.scale);
   // 只有「距离远 + 缩放相近」才走拉远弧线；缩放跨度大时普通飞行更稳（弧线会闪）
   const arc = dist > innerWidth * 1.1 && ratio < 1.8;
   const ms = dur(arc ? 1050 : (ratio > 1.8 ? 900 : 780));
-  if (arc) flyToArc(v.x, v.y, v.scale, ms);
-  else flyTo(v.x, v.y, v.scale, ms);
+  if (arc) flyToArc(t.x, t.y, t.scale, ms);
+  else flyTo(t.x, t.y, t.scale, ms);
   markActiveView();
   updatePresHint();
 }
@@ -2682,6 +2721,8 @@ $('#btnExitMode').addEventListener('click', () => {
 });
 /* 中间那条现在只是「第几个」的指示器，退出一律用左下角的 ✕ —— 不再两套控件 */
 $('#btnCloseViews').addEventListener('click', () => toggleViewsPanel(false));
+$('#btnViewFit').addEventListener('click', () => setViewFit(!viewFit));
+{ const b = $('#btnViewFit'); if (b) b.textContent = '跨屏适配：' + (viewFit ? '开' : '关'); }
 
 /* 点画布其它地方收起视图面板 */
 stage.addEventListener('pointerdown', () => { if (viewsPanel.classList.contains('show')) toggleViewsPanel(false); });
@@ -3535,9 +3576,12 @@ function fpsLoop(now) {
 function addViewNamed(name) {
   const b = board();
   if (!b.views) b.views = [];
+  const s = state.camera.scale;
   const v = {
     id: uid(), name,
-    x: state.camera.x, y: state.camera.y, scale: state.camera.scale,
+    x: state.camera.x, y: state.camera.y, scale: s,
+    // 当时屏幕上看到的世界区域（跨屏一致的关键：记区域而不是只记倍数）
+    rx: state.camera.x, ry: state.camera.y, rw: innerWidth / s, rh: innerHeight / s,
     thumb: captureThumb(),
   };
   b.views.push(v);
@@ -3550,6 +3594,12 @@ function boot() {
   const q = localStorage.getItem('canvas.quality');
   setQuality(q === 'high' || q === 'low' ? q : 'auto');
   load();
+  /* 旧视图（只存了缩放倍数）按当前屏幕补出区域，跨设备效果会接近很多；只做一次 */
+  if (!localStorage.getItem('canvas.viewMigrated')) {
+    const n = migrateViews();
+    localStorage.setItem('canvas.viewMigrated', '1');
+    if (n) setTimeout(() => showToast(`已让 ${n} 个旧视图适配不同屏幕；想要最准可以在当前屏幕上重录一次`), 900);
+  }
   boardNameEl.value = board().name;
   renderBoard();
   setTool('select');
