@@ -38,7 +38,7 @@ const EASE_IN = makeBezier(.4, 0, 1, 1);
 const CSS_IOS = 'cubic-bezier(.32,.72,0,1)';
 
 /* ---------------- DOM ---------------- */
-const stage = $('#stage'), viewport = $('#viewport'), world = $('#world');
+const stage = $('#stage'), viewport = $('#viewport'), world = $('#world'), viewRegions = $('#viewRegions');
 const grid = $('#grid'), marquee = $('#marquee'), guides = $('#guides');
 const topbar = $('.topbar'), toolbar = $('#toolbar');
 const boardsPanel = $('#boardsPanel'), boardList = $('#boardList');
@@ -78,7 +78,7 @@ const LIB_CFG = 'canvas.lib.cfg';
 // —— 内置作品：《艺术（上）》腾讯文档转换件（首次启动自动加入目录，不覆盖用户已有画布）——
 const BUILTIN_ART_ID = 'builtin-art-sj';
 const BUILTIN_ART_NAME = '艺术（上）· 音乐鉴赏';
-const BUILTIN_ART_PAYLOAD = {"v":1,"activeId":"b0eq4g8e","boards":[{"id":"b0eq4g8e","name":"艺术（上）· 音乐鉴赏","ver":2,"camera":{"x":-120,"y":-60,"scale":0.92},"elements":[{"id":"e020q7gx","type":"text","x":220,"y":260,"w":1160,"h":180,"text":"艺术（上）","fontSize":110},{"id":"ecj1bsnf","type":"text","x":220,"y":470,"w":1160,"h":90,"text":"音乐欣赏 · 中职公共艺术鉴赏课","fontSize":46},{"id":"eh7inztw","type":"note","x":220,"y":610,"w":1180,"h":70,"text":"本画布含 9 个视图：封面 / 分类 / 钢琴 / 二胡 / 吹管弹拨 / 提琴民乐 / 民族声乐 / 花絮 / B站详解","color":"c-blue"},{"id":"eqtwahxp","type":"note","x":1920,"y":70,"w":220,"h":64,"text":"一","color":"c-blue"},{"id":"ez6tqvik","type":"text","x":1920,"y":150,"w":1440,"h":120,"text":"音乐的分类","fontSize":66},{"id":"e6xkmweq","type":"text","x":1920,"y":300,"w":1440,"h":520,"text":"流行 Pop\n摇滚 Rock\n嘻哈 / 说唱 Hip-Hop / Rap\n民谣 Folk\nR&B / 灵魂乐 R&B / Soul\n乡村音乐 Country\n爵士乐 Jazz\n其他\n· 想一想：你觉得音乐还能怎么分？","fontSize":36},{"id":"efdgyr5r","type":"note","x":1920,"y":840,"w":1440,"h":56,"text":"资源：B 站《音乐歌曲分类及代表作品详解》合集（下方「B站详解」页已嵌入全部视频，可直接播放）","color":"c-yellow"},{"id":"ebf2w7la","type":"note","x":3760,"y":70,"w":220,"h":64,"text":"二·1","color":"c-pink"},{"id":"e765hatm","type":"text","x":3760,"y":150,"w":1440,"h":120,"text":"名曲鉴赏 · 钢琴","fontSize":66},{"id":"egy245td","type":"text","x":3760,"y":300,"w":1440,"h":520,"text":"海上钢琴师（电影配乐）\n拉赫玛尼诺夫《第三钢琴协奏曲》— 朗朗\n卡农 Canon\n漫威动画主题音乐 — 朗朗\n《加勒比海盗》主题曲 He’s a Pirate\n《权力的游戏》主题曲 Main Title\n《环太平洋》Pacific Rim\n《杀死比尔》Battle Without Honor or Humanity","fontSize":36},{"id":"efwz6ck9","type":"note","x":5600,"y":70,"w":220,"h":64,"text":"二·2","color":"c-green"},{"id":"eznolaya","type":"text","x":5600,"y":150,"w":1440,"h":120,"text":"名曲鉴赏 · 二胡","fontSize":66},{"id":"e0z7t6on","type":"text","x":5600,"y":300,"w":1440,"h":520,"text":"二泉映月\n赛马\n一步之遥\n悬溺","fontSize":36},{"id":"evdnp9g2","type":"note","x":7440,"y":70,"w":220,"h":64,"text":"二·3","color":"c-yellow"},{"id":"e4xjnylk","type":"text","x":7440,"y":150,"w":1440,"h":120,"text":"名曲鉴赏 · 吹管与弹拨","fontSize":66},{"id":"e9zgl6ho","type":"text","x":7440,"y":300,"w":1440,"h":520,"text":"唢呐《The Spectre》\n唢呐《百鸟朝凤》\n唢呐《summer》\n贝斯主题曲 — 于文文《冷夜雨》\n《加州旅馆》\n《欢乐斗地主》","fontSize":36},{"id":"e6jkfvxz","type":"note","x":9280,"y":70,"w":220,"h":64,"text":"二·4","color":"c-blue"},{"id":"ec2xdidp","type":"text","x":9280,"y":150,"w":1440,"h":120,"text":"名曲鉴赏 · 提琴与民乐","fontSize":66},{"id":"e88k8cem","type":"text","x":9280,"y":300,"w":1440,"h":520,"text":"小提琴《亡灵序曲》\n《猫和老鼠》（小提 + 钢琴）\n小提琴《七里香》\n民乐《七里香》\n中西乐器对决","fontSize":36},{"id":"excpiw9g","type":"note","x":11120,"y":70,"w":220,"h":64,"text":"二·5","color":"c-pink"},{"id":"ed9nlicx","type":"text","x":11120,"y":150,"w":1440,"h":120,"text":"名曲鉴赏 · 民族声乐","fontSize":66},{"id":"e462630q","type":"text","x":11120,"y":300,"w":1440,"h":520,"text":"呼麦《哪吒闹海 2》\n呼麦 — 马头琴（哈拉木吉）\nVitas《歌剧 2》\nVitas《星星》\n《达拉崩吧》— 周深\n《忐忑》— 龚琳娜\n男低音 / 约尔德唱法","fontSize":36},{"id":"etnfywrb","type":"note","x":12960,"y":70,"w":220,"h":64,"text":"三","color":"c-green"},{"id":"eawiah3r","type":"text","x":12960,"y":150,"w":1440,"h":120,"text":"花絮 · 趣味知识","fontSize":66},{"id":"eej7a68r","type":"text","x":12960,"y":300,"w":1440,"h":520,"text":"约翰·凯奇《4 分 33 秒》— 关于\"无声\"的观念音乐\n《头文字 D》动画配乐\n· 提示：每个视图都可在画布里继续补充视频链接、图片与批注","fontSize":36},{"id":"eqqg3e03","type":"note","x":14800,"y":70,"w":220,"h":64,"text":"四","color":"c-yellow"},{"id":"e0b2wxec","type":"text","x":14800,"y":150,"w":1440,"h":110,"text":"B站详解 · 音乐分类合集","fontSize":60},{"id":"e7xug4rg","type":"note","x":14800,"y":280,"w":1440,"h":56,"text":"下方 21 个视频均为原《艺术 上》文档里的 B 站链接，点一下即播放（懒加载，不占性能）","color":"c-yellow"},{"id":"evtzoao3","type":"video","x":14760,"y":360,"w":280,"h":176,"bvid":"BV1St4y1p7Ee","title":"B站 1"},{"id":"ena2vqto","type":"video","x":15070,"y":360,"w":280,"h":176,"bvid":"BV1ks411P7PT","title":"B站 2"},{"id":"effyxpkz","type":"video","x":15380,"y":360,"w":280,"h":176,"bvid":"BV1e2wjeYE41","title":"B站 3"},{"id":"evjxvo2r","type":"video","x":15690,"y":360,"w":280,"h":176,"bvid":"BV17a4y1A7t6","title":"B站 4"},{"id":"ezrt6x4m","type":"video","x":16000,"y":360,"w":280,"h":176,"bvid":"BV1UR4y1D7Cv","title":"B站 5"},{"id":"erxu78df","type":"video","x":14760,"y":566,"w":280,"h":176,"bvid":"BV1WJ411S7VW","title":"B站 6"},{"id":"e82wo892","type":"video","x":15070,"y":566,"w":280,"h":176,"bvid":"BV11z411B75q","title":"B站 7"},{"id":"e7zxy1st","type":"video","x":15380,"y":566,"w":280,"h":176,"bvid":"BV18e4y1h7Zq","title":"B站 8"},{"id":"egrcqmre","type":"video","x":15690,"y":566,"w":280,"h":176,"bvid":"BV1r54y1577U","title":"B站 9"},{"id":"ee4z1ex9","type":"video","x":16000,"y":566,"w":280,"h":176,"bvid":"BV1aE411M7Hg","title":"B站 10"},{"id":"edadxbyt","type":"video","x":14760,"y":772,"w":280,"h":176,"bvid":"BV1sN4y1U726","title":"B站 11"},{"id":"e26qrqro","type":"video","x":15070,"y":772,"w":280,"h":176,"bvid":"BV1WT41117ug","title":"B站 12"},{"id":"ecpd0jph","type":"video","x":15380,"y":772,"w":280,"h":176,"bvid":"BV1DyTgzmEmz","title":"B站 13"},{"id":"e7yjvch2","type":"video","x":15690,"y":772,"w":280,"h":176,"bvid":"BV1U4411C74b","title":"B站 14"},{"id":"ehbqbcfu","type":"video","x":16000,"y":772,"w":280,"h":176,"bvid":"BV1j5x8eKECK","title":"B站 15"},{"id":"eese1fxv","type":"video","x":14760,"y":978,"w":280,"h":176,"bvid":"BV1pb411L7k6","title":"B站 16"},{"id":"e3faq1ao","type":"video","x":15070,"y":978,"w":280,"h":176,"bvid":"BV1w14y1E71e","title":"B站 17"},{"id":"ee63n1nx","type":"video","x":15380,"y":978,"w":280,"h":176,"bvid":"BV1tK421C7Lt","title":"B站 18"},{"id":"e6ozibkl","type":"video","x":15690,"y":978,"w":280,"h":176,"bvid":"BV14f4y1R7tc","title":"B站 19"},{"id":"e9j2uhtq","type":"video","x":16000,"y":978,"w":280,"h":176,"bvid":"BV1ugWbzkEr4","title":"B站 20"},{"id":"eedhettz","type":"video","x":14760,"y":1184,"w":280,"h":176,"bvid":"BV1W14y1e7pE","title":"B站 21"}],"views":[{"id":"vuy8fwoc","name":"封面","x":0,"y":0,"scale":1,"cx":800,"cy":450,"rw":1600,"rh":900,"thumb":""},{"id":"vmn7et29","name":"音乐的分类","x":1840,"y":0,"scale":1,"cx":2640,"cy":450,"rw":1600,"rh":900,"thumb":""},{"id":"v0yaxswi","name":"名曲鉴赏 · 钢琴","x":3680,"y":0,"scale":1,"cx":4480,"cy":450,"rw":1600,"rh":900,"thumb":""},{"id":"vtn2b6uy","name":"名曲鉴赏 · 二胡","x":5520,"y":0,"scale":1,"cx":6320,"cy":450,"rw":1600,"rh":900,"thumb":""},{"id":"vnrda2rv","name":"名曲鉴赏 · 吹管与弹拨","x":7360,"y":0,"scale":1,"cx":8160,"cy":450,"rw":1600,"rh":900,"thumb":""},{"id":"v85xeic9","name":"名曲鉴赏 · 提琴与民乐","x":9200,"y":0,"scale":1,"cx":10000,"cy":450,"rw":1600,"rh":900,"thumb":""},{"id":"v7aqkxtv","name":"名曲鉴赏 · 民族声乐","x":11040,"y":0,"scale":1,"cx":11840,"cy":450,"rw":1600,"rh":900,"thumb":""},{"id":"v3rnsc4g","name":"花絮 · 趣味知识","x":12880,"y":0,"scale":1,"cx":13680,"cy":450,"rw":1600,"rh":900,"thumb":""},{"id":"vrsdn22l","name":"B站详解 · 音乐分类合集","x":14720,"y":0,"scale":1,"cx":15520,"cy":860,"rw":1600,"rh":1380,"thumb":""}]}]};
+const BUILTIN_ART_PAYLOAD = {"v":1,"activeId":"b0eq4g8e","boards":[{"id":"b0eq4g8e","name":"艺术（上）· 音乐鉴赏","ver":2,"camera":{"x":-120,"y":-60,"scale":0.92},"elements":[{"id":"e020q7gx","type":"text","x":220,"y":260,"w":1160,"h":180,"text":"艺术（上）","fontSize":110},{"id":"ecj1bsnf","type":"text","x":220,"y":470,"w":1160,"h":90,"text":"音乐欣赏 · 中职公共艺术鉴赏课","fontSize":46},{"id":"eh7inztw","type":"note","x":220,"y":610,"w":1180,"h":70,"text":"本画布含 9 个视图：封面 / 分类 / 钢琴 / 二胡 / 吹管弹拨 / 提琴民乐 / 民族声乐 / 花絮 / B站详解","color":"c-blue"},{"id":"eqtwahxp","type":"note","x":1920,"y":70,"w":220,"h":64,"text":"一","color":"c-blue"},{"id":"ez6tqvik","type":"text","x":1920,"y":150,"w":1440,"h":120,"text":"音乐的分类","fontSize":66},{"id":"e6xkmweq","type":"text","x":1920,"y":300,"w":1440,"h":520,"text":"流行 Pop\n摇滚 Rock\n嘻哈 / 说唱 Hip-Hop / Rap\n民谣 Folk\nR&B / 灵魂乐 R&B / Soul\n乡村音乐 Country\n爵士乐 Jazz\n其他\n· 想一想：你觉得音乐还能怎么分？","fontSize":36},{"id":"efdgyr5r","type":"note","x":1920,"y":840,"w":1440,"h":56,"text":"资源：B 站《音乐歌曲分类及代表作品详解》合集（下方「B站详解」页已嵌入全部视频，可直接播放）","color":"c-yellow"},{"id":"ebf2w7la","type":"note","x":3760,"y":70,"w":220,"h":64,"text":"二·1","color":"c-pink"},{"id":"e765hatm","type":"text","x":3760,"y":150,"w":1440,"h":120,"text":"名曲鉴赏 · 钢琴","fontSize":66},{"id":"egy245td","type":"text","x":3760,"y":300,"w":1440,"h":520,"text":"海上钢琴师（电影配乐）\n拉赫玛尼诺夫《第三钢琴协奏曲》— 朗朗\n卡农 Canon\n漫威动画主题音乐 — 朗朗\n《加勒比海盗》主题曲 He’s a Pirate\n《权力的游戏》主题曲 Main Title\n《环太平洋》Pacific Rim\n《杀死比尔》Battle Without Honor or Humanity","fontSize":36},{"id":"efwz6ck9","type":"note","x":5600,"y":70,"w":220,"h":64,"text":"二·2","color":"c-green"},{"id":"eznolaya","type":"text","x":5600,"y":150,"w":1440,"h":120,"text":"名曲鉴赏 · 二胡","fontSize":66},{"id":"e0z7t6on","type":"text","x":5600,"y":300,"w":1440,"h":520,"text":"二泉映月\n赛马\n一步之遥\n悬溺","fontSize":36},{"id":"evdnp9g2","type":"note","x":7440,"y":70,"w":220,"h":64,"text":"二·3","color":"c-yellow"},{"id":"e4xjnylk","type":"text","x":7440,"y":150,"w":1440,"h":120,"text":"名曲鉴赏 · 吹管与弹拨","fontSize":66},{"id":"e9zgl6ho","type":"text","x":7440,"y":300,"w":1440,"h":520,"text":"唢呐《The Spectre》\n唢呐《百鸟朝凤》\n唢呐《summer》\n贝斯主题曲 — 于文文《冷夜雨》\n《加州旅馆》\n《欢乐斗地主》","fontSize":36},{"id":"e6jkfvxz","type":"note","x":9280,"y":70,"w":220,"h":64,"text":"二·4","color":"c-blue"},{"id":"ec2xdidp","type":"text","x":9280,"y":150,"w":1440,"h":120,"text":"名曲鉴赏 · 提琴与民乐","fontSize":66},{"id":"e88k8cem","type":"text","x":9280,"y":300,"w":1440,"h":520,"text":"小提琴《亡灵序曲》\n《猫和老鼠》（小提 + 钢琴）\n小提琴《七里香》\n民乐《七里香》\n中西乐器对决","fontSize":36},{"id":"excpiw9g","type":"note","x":11120,"y":70,"w":220,"h":64,"text":"二·5","color":"c-pink"},{"id":"ed9nlicx","type":"text","x":11120,"y":150,"w":1440,"h":120,"text":"名曲鉴赏 · 民族声乐","fontSize":66},{"id":"e462630q","type":"text","x":11120,"y":300,"w":1440,"h":520,"text":"呼麦《哪吒闹海 2》\n呼麦 — 马头琴（哈拉木吉）\nVitas《歌剧 2》\nVitas《星星》\n《达拉崩吧》— 周深\n《忐忑》— 龚琳娜\n男低音 / 约尔德唱法","fontSize":36},{"id":"etnfywrb","type":"note","x":12960,"y":70,"w":220,"h":64,"text":"三","color":"c-green"},{"id":"eawiah3r","type":"text","x":12960,"y":150,"w":1440,"h":120,"text":"花絮 · 趣味知识","fontSize":66},{"id":"eej7a68r","type":"text","x":12960,"y":300,"w":1440,"h":520,"text":"约翰·凯奇《4 分 33 秒》— 关于\"无声\"的观念音乐\n《头文字 D》动画配乐\n· 提示：每个视图都可在画布里继续补充视频链接、图片与批注","fontSize":36},{"id":"eqqg3e03","type":"note","x":14800,"y":70,"w":220,"h":64,"text":"四","color":"c-yellow"},{"id":"e0b2wxec","type":"text","x":14800,"y":150,"w":1440,"h":110,"text":"B站详解 · 音乐分类合集","fontSize":60},{"id":"e7xug4rg","type":"note","x":14800,"y":280,"w":1440,"h":56,"text":"下方 21 个视频均为原《艺术 上》文档里的 B 站链接，点一下即播放（懒加载，不占性能）","color":"c-yellow"},{"id":"evtzoao3","type":"video","x":14760,"y":360,"w":280,"h":176,"bvid":"BV1St4y1p7Ee","title":"【4K&1080P】周杰伦-《反方向的钟》MV完整版"},{"id":"ena2vqto","type":"video","x":15070,"y":360,"w":280,"h":176,"bvid":"BV1ks411P7PT","title":"blank space 泰勒斯威夫特 原版MV（蓝光）"},{"id":"effyxpkz","type":"video","x":15380,"y":360,"w":280,"h":176,"bvid":"BV1e2wjeYE41","title":"[Hi-res][4K60帧][Dua Lipa] - Levitating双语字幕"},{"id":"evjxvo2r","type":"video","x":15690,"y":360,"w":280,"h":176,"bvid":"BV17a4y1A7t6","title":"【4K60FPS】迈克尔·杰克逊《Billie Jean》太空步名场面现场！无法超越"},{"id":"ezrt6x4m","type":"video","x":16000,"y":360,"w":280,"h":176,"bvid":"BV1UR4y1D7Cv","title":"S.H.E《不想长大》MV"},{"id":"erxu78df","type":"video","x":14760,"y":566,"w":280,"h":176,"bvid":"BV1WJ411S7VW","title":"【莫扎特第40交响曲】卡瓦科斯：我不想我不想不想长大，再长大我就专职搞指挥 Leonidas Kavakos: Mozart Symphony No. 40"},{"id":"e82wo892","type":"video","x":15070,"y":566,"w":280,"h":176,"bvid":"BV11z411B75q","title":"崔健-一无所有【中国之星】"},{"id":"e7zxy1st","type":"video","x":15380,"y":566,"w":280,"h":176,"bvid":"BV18e4y1h7Zq","title":"【4K60FPS】许巍《蓝莲花》万人大合唱现场！盛开着永不凋零"},{"id":"egrcqmre","type":"video","x":15690,"y":566,"w":280,"h":176,"bvid":"BV1r54y1577U","title":"【4K修复】窦唯《高级动物》MV 阳光之下，都是迷幻、地狱天堂，皆在人间"},{"id":"ee4z1ex9","type":"video","x":16000,"y":566,"w":280,"h":176,"bvid":"BV1aE411M7Hg","title":"胡夏这首《同桌的你》，句句走心声声入耳，听完勾起了多少甜蜜的回忆？"},{"id":"edadxbyt","type":"video","x":14760,"y":772,"w":280,"h":176,"bvid":"BV1sN4y1U726","title":"有人说，《米店》是“近十年最好听的中文民谣歌曲之一” 张玮玮"},{"id":"e26qrqro","type":"video","x":15070,"y":772,"w":280,"h":176,"bvid":"BV1WT41117ug","title":"【4K60FPS】   马頔《南山南》   南山南  北秋悲"},{"id":"ecpd0jph","type":"video","x":15380,"y":772,"w":280,"h":176,"bvid":"BV1DyTgzmEmz","title":"【单依纯《李白》】如何呢，又能怎？"},{"id":"e7yjvch2","type":"video","x":15690,"y":772,"w":280,"h":176,"bvid":"BV1U4411C74b","title":"中国好声音十大盲选现场，他们一鸣惊人"},{"id":"ehbqbcfu","type":"video","x":16000,"y":772,"w":280,"h":176,"bvid":"BV1j5x8eKECK","title":"[音高测量]祖国母亲75岁生日快乐！ 《我爱你中国》群星版音高测量"},{"id":"eese1fxv","type":"video","x":14760,"y":978,"w":280,"h":176,"bvid":"BV1pb411L7k6","title":"《我和我的祖国》MV 中央广播电视总台制作"},{"id":"e3faq1ao","type":"video","x":15070,"y":978,"w":280,"h":176,"bvid":"BV1w14y1E71e","title":"听音乐，怎样才叫懂？"},{"id":"ee63n1nx","type":"video","x":15380,"y":978,"w":280,"h":176,"bvid":"BV1tK421C7Lt","title":"《海上钢琴师》斗琴片段"},{"id":"e6ozibkl","type":"video","x":15690,"y":978,"w":280,"h":176,"bvid":"BV14f4y1R7tc","title":"王羽佳（炫技八度野蜂飞舞）"},{"id":"e9j2uhtq","type":"video","x":16000,"y":978,"w":280,"h":176,"bvid":"BV1ugWbzkEr4","title":"台湾王世坚《没出息》完整版--经典语句：本来应该匆匆忙忙游刃有余，现在是匆匆忙忙连滚带爬#搞笑视频"},{"id":"eedhettz","type":"video","x":14760,"y":1184,"w":280,"h":176,"bvid":"BV1W14y1e7pE","title":"【4K60FPS极致修复】林俊杰《煎熬》起高了名场面"}],"views":[{"id":"vuy8fwoc","name":"封面","x":0,"y":0,"scale":1,"cx":800,"cy":450,"rw":1600,"rh":900,"thumb":""},{"id":"vmn7et29","name":"音乐的分类","x":1840,"y":0,"scale":1,"cx":2640,"cy":450,"rw":1600,"rh":900,"thumb":""},{"id":"v0yaxswi","name":"名曲鉴赏 · 钢琴","x":3680,"y":0,"scale":1,"cx":4480,"cy":450,"rw":1600,"rh":900,"thumb":""},{"id":"vtn2b6uy","name":"名曲鉴赏 · 二胡","x":5520,"y":0,"scale":1,"cx":6320,"cy":450,"rw":1600,"rh":900,"thumb":""},{"id":"vnrda2rv","name":"名曲鉴赏 · 吹管与弹拨","x":7360,"y":0,"scale":1,"cx":8160,"cy":450,"rw":1600,"rh":900,"thumb":""},{"id":"v85xeic9","name":"名曲鉴赏 · 提琴与民乐","x":9200,"y":0,"scale":1,"cx":10000,"cy":450,"rw":1600,"rh":900,"thumb":""},{"id":"v7aqkxtv","name":"名曲鉴赏 · 民族声乐","x":11040,"y":0,"scale":1,"cx":11840,"cy":450,"rw":1600,"rh":900,"thumb":""},{"id":"v3rnsc4g","name":"花絮 · 趣味知识","x":12880,"y":0,"scale":1,"cx":13680,"cy":450,"rw":1600,"rh":900,"thumb":""},{"id":"vrsdn22l","name":"B站详解 · 音乐分类合集","x":14720,"y":0,"scale":1,"cx":15520,"cy":860,"rw":1600,"rh":1380,"thumb":""}]}]};
 const BUILTIN_ART_EL = (BUILTIN_ART_PAYLOAD.boards[0].elements || []).length;
 const LIB_LOCAL = 'canvas.lib.local';
 
@@ -96,6 +96,8 @@ const state = {
   quality: 'auto',        // auto | high | low —— 低画质会砍掉模糊/毛玻璃/部分动效
   presenting: false,
   presentIdx: 0,
+  shapeKind: 'rect',      // 形状工具当前选中的种类：rect / round / ellipse
+  showViewRegions: false, // 是否在画布上画出「已保存视图的区域」参考框（默认关）
 };
 
 const domMap = new Map();          // id -> DOM
@@ -229,6 +231,7 @@ function pushHistory() {
   if (undoStack.length > 60) undoStack.shift();
   redoStack.length = 0;
   lastSnapshot = snap;
+  updateHistoryButtons();
 }
 function restore(snap) {
   const d = JSON.parse(snap);
@@ -243,6 +246,7 @@ function restore(snap) {
   const c = board().camera || { x: 0, y: 0, scale: 1 };
   flyTo(c.x, c.y, c.scale, 420);
   markDirty();
+  updateHistoryButtons();
 }
 function undo() {
   if (!undoStack.length) return showToast('没有更多可撤销');
@@ -264,6 +268,7 @@ let lastZoomTxt = '', lastStep = -1, lastCullAt = 0, culledAny = false;
 function applyCamera() {
   const { x, y, scale } = state.camera;
   world.style.transform = `translate3d(${-x * scale}px, ${-y * scale}px, 0) scale(${scale})`;
+  if (viewRegions) viewRegions.style.transform = world.style.transform;
 
   // 网格：只在步长档位变化时改 background-size，其余走 transform（纯合成，不触发重绘）
   let step = 26 * scale;
@@ -444,6 +449,7 @@ function cull() {
 const NOTE_COLORS = ['c-yellow', 'c-pink', 'c-blue', 'c-green', 'c-purple', 'c-gray'];
 
 function elClass(d) {
+  if (d.type === 'shape') return `el el-shape shape-${d.shape || 'rect'}${d.fill ? ' fill' : ''}${d.color ? ' ' + d.color : ''}`;
   return `el el-${d.type}${d.type === 'note' ? ' ' + (d.color || 'c-yellow') : ''}`;
 }
 const DEF_FONT = { note: 17, text: 28 };
@@ -498,6 +504,16 @@ function buildEl(d) {
     body.appendChild(bar);
     body.appendChild(stub);
     body.appendChild(play);
+  } else if (d.type === 'shape') {
+    const box = document.createElement('div');
+    box.className = 's-box';
+    if (d.label) {
+      const lb = document.createElement('span');
+      lb.className = 's-label';
+      lb.textContent = d.label;
+      box.appendChild(lb);
+    }
+    body.appendChild(box);
   } else if (d.type === 'ink') {
     body.appendChild(inkSvg(d));
   } else if (d.type === 'link') {
@@ -573,6 +589,13 @@ function refreshEl(d) {
   } else if (d.type === 'image') {
     const img = dom.querySelector('img');
     if (img && img.getAttribute('src') !== (d.src || '')) img.src = d.src || '';
+  } else if (d.type === 'shape') {
+    const box = dom.querySelector('.s-box');
+    if (box) {
+      let lb = box.querySelector('.s-label');
+      if (d.label) { if (!lb) { lb = document.createElement('span'); lb.className = 's-label'; box.appendChild(lb); } lb.textContent = d.label; }
+      else if (lb) lb.remove();
+    }
   } else if (d.type === 'ink') {
     const old = body.querySelector('svg');
     const nw = inkSvg(d);
@@ -876,6 +899,7 @@ function renderBoard() {
   updateBoardMeta();
   renderBoardList();
   renderViews();
+  renderViewRegions();
   drawMinimap();
 }
 
@@ -966,7 +990,7 @@ function updateCtxbar() {
   }
   // 内容只在「选中的东西变了」时重建 —— 这个函数每帧都会被调用，
   // 每帧重设 innerHTML 会在相机飞行时白白吃掉十几帧
-  const sig = list.map(e => [e.id, e.type, e.arrow, e.curve, e.fontSize, e.color].join(':')).join('|');
+  const sig = list.map(e => [e.id, e.type, e.arrow, e.curve, e.fontSize, e.color, e.fill, e.shape, e.label].join(':')).join('|');
   if (sig !== ctxSig) {
     ctxSig = sig;
     ctxbar.innerHTML = ctxHtml(list);
@@ -1013,7 +1037,10 @@ const ICON = {
   curve: '<svg viewBox="0 0 24 24"><path d="M4 18C10 18 14 6 20 6"/></svg>',
   child: '<svg viewBox="0 0 24 24"><path d="M12 6v12M6 12h12"/></svg>',
   sibling: '<svg viewBox="0 0 24 24"><path d="M5 4v16"/><path d="M5 12h6a3 3 0 003-3V6"/><path d="M5 12h6a3 3 0 013 3v4"/></svg>',
+  fill: '<svg viewBox="0 0 24 24"><path d="M4 4h16v16H4z"/></svg>',
+  crop: '<svg viewBox="0 0 24 24"><path d="M6 2v14a2 2 0 002 2h14"/><path d="M2 6h14a2 2 0 012 2v14"/></svg>',
 };
+const SWATCHES = { 'c-yellow': '#FFE066', 'c-pink': '#FFAFCC', 'c-blue': '#A9D6FF', 'c-green': '#A8E6B8', 'c-purple': '#CDB4FF', 'c-gray': '#DCDCE1' };
 
 function ctxHtml(list) {
   const one = list[0], all = list.length > 1;
@@ -1049,6 +1076,20 @@ function ctxHtml(list) {
     html += `<div class="cx" data-act="focus" title="聚焦">${ICON.fit}</div>`;
     html += '<div class="cdiv"></div>';
   }
+  if (!all && one.type === 'shape') {
+    html += '<div style="display:flex;gap:5px;padding:0 4px">';
+    NOTE_COLORS.forEach(c => {
+      const on = (one.color || 'c-blue') === c ? ' on' : '';
+      html += `<div class="sw ${c}${on}" data-act="color" data-v="${c}" style="background:${SWATCHES[c]}"></div>`;
+    });
+    html += '</div><div class="cdiv"></div>';
+    html += `<div class="cx" data-act="fill" title="切换填充 ${one.fill ? '（已填）' : '（描边）'}">${ICON.fill}</div>`;
+    html += '<div class="cdiv"></div>';
+  }
+  if (!all && one.type === 'image') {
+    html += `<div class="cx" data-act="crop" title="裁切为固定比例">${ICON.crop}</div>`;
+    html += '<div class="cdiv"></div>';
+  }
   if (!all && (one.type === 'image' || one.type === 'video')) {
     html += `<div class="cx" data-act="focus" title="聚焦">${ICON.fit}</div>`;
     html += '<div class="cdiv"></div>';
@@ -1072,6 +1113,15 @@ ctxbar.addEventListener('pointerdown', e => {
     const dom = domMap.get(one.id);
     if (dom) dom.className = elClass(one) + ' sel editable';
     markDirty();
+  } else if (act === 'fill' && one) {
+    pushHistory();
+    one.fill = !one.fill;
+    const dom = domMap.get(one.id);
+    if (dom) dom.className = elClass(one) + (dom.classList.contains('sel') ? ' sel' : '') + (dom.classList.contains('editable') ? ' editable' : '');
+    markDirty();
+    updateCtxbar();
+  } else if (act === 'crop' && one) {
+    openCrop(one);
   } else if (act === 'del') {
     removeEls(ids);
   } else if (act === 'copy') {
@@ -1434,6 +1484,7 @@ function onDown(e) {
   const p = screenToWorld(e.clientX, e.clientY);
   if (state.tool === 'note') createNote(p);
   else if (state.tool === 'text') createText(p);
+  else if (state.tool === 'shape') createShape(p);
   setTool('select');
 }
 
@@ -1870,6 +1921,62 @@ function createText(p) {
   select([d.id]);
   enterEdit(d.id);
 }
+function createShape(p) {
+  const kind = state.shapeKind || 'rect';
+  const w = 220, h = 140;
+  const d = { id: uid(), type: 'shape', shape: kind, x: p.x - w / 2, y: p.y - h / 2, w, h, color: 'c-blue' };
+  if (kind === 'ellipse') d.h = 160;
+  addEl(d);
+  select([d.id]);
+}
+
+/* ---------------- 图片裁切（固定比例，中心裁切 + 重采样） ---------------- */
+const cropPop = $('#cropPop');
+let cropTargetId = null;
+function openCrop(d) {
+  if (!d || d.type !== 'image') return showToast('请先选中一张图片');
+  if (!d.src) return showToast('这张图片没有可裁切的源图');
+  cropTargetId = d.id;
+  cropPop.classList.add('show');
+}
+function cropApply(ratioStr) {
+  const d = findEl(cropTargetId);
+  cropPop.classList.remove('show');
+  if (!d || d.type !== 'image' || !d.src) return;
+  const [rw, rh] = ratioStr.split(':').map(Number);
+  const r = rw / rh;
+  pushHistory();
+  const img = new Image();
+  img.onload = () => {
+    const W = img.naturalWidth || 0, H = img.naturalHeight || 0;
+    if (!W || !H) { showToast('图片还没加载好，稍后再试'); return; }
+    let cw, ch, cx, cy;
+    if (W / H >= r) { ch = H; cw = Math.round(H * r); cx = Math.round((W - cw) / 2); cy = 0; }
+    else { cw = W; ch = Math.round(W / r); cx = 0; cy = Math.round((H - ch) / 2); }
+    const k = Math.min(1, 2048 / Math.max(cw, ch));
+    const cv = document.createElement('canvas');
+    cv.width = Math.max(1, Math.round(cw * k)); cv.height = Math.max(1, Math.round(ch * k));
+    const ctx = cv.getContext('2d');
+    ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(img, cx, cy, cw, ch, 0, 0, cv.width, cv.height);
+    let url;
+    try {
+      const data = ctx.getImageData(0, 0, cv.width, cv.height).data;
+      let alpha = false;
+      for (let i = 3; i < data.length; i += 4 * 53) if (data[i] < 250) { alpha = true; break; }
+      url = alpha ? cv.toDataURL('image/png') : cv.toDataURL('image/jpeg', 0.9);
+    } catch (e) { url = cv.toDataURL('image/jpeg', 0.9); }
+    d.src = url; delete d.imgId;          // 裁切后改为本地源，避免还指向旧的云图
+    // 维持视觉高度，宽度按新比例换算
+    d.w = Math.round((d.h || 140) * r);
+    refreshEl(d);
+    drawMinimap();
+    markDirty();
+    showToast('已裁切为 ' + ratioStr);
+  };
+  img.onerror = () => showToast('图片加载失败，无法裁切');
+  img.src = d.src;
+}
 function openImage() { fileInput.value = ''; fileInput.click(); setTool('select'); }
 fileInput.addEventListener('change', () => {
   const files = [...fileInput.files].filter(f => f.type.startsWith('image/'));
@@ -2047,15 +2154,40 @@ function setTool(t) {
   stage.classList.add('tool-' + t);
   if (t !== 'select') clearSelection();
   if (t === 'erase') stage.classList.add('is-erasing');
+  if (shapePop) shapePop.classList.toggle('show', t === 'shape');
+  if (cropPop) cropPop.classList.remove('show');
 }
 document.querySelectorAll('.tool[data-tool]').forEach(b => {
   b.addEventListener('click', () => {
     const t = b.dataset.tool;
     if (t === 'image') { openImage(); return; }
     if (t === 'video') { openVideoModal(); return; }
+    if (t === 'crop') {
+      const sel = [...state.selection].map(findEl).filter(x => x && x.type === 'image');
+      if (sel.length === 1) openCrop(sel[0]);
+      else showToast('先选中（且仅选中）一张图片，再点裁切');
+      return;
+    }
     setTool(t);
   });
 });
+
+/* 形状选择弹层 */
+const shapePop = $('#shapePop');
+if (shapePop) {
+  shapePop.querySelectorAll('[data-shape]').forEach(b => {
+    b.addEventListener('click', () => {
+      state.shapeKind = b.dataset.shape;
+      shapePop.querySelectorAll('[data-shape]').forEach(x => x.classList.toggle('active', x === b));
+    });
+  });
+}
+/* 裁切比例弹层 */
+if (cropPop) {
+  cropPop.querySelectorAll('[data-ratio]').forEach(b => {
+    b.addEventListener('click', () => cropApply(b.dataset.ratio));
+  });
+}
 
 $('#btnZoomIn').addEventListener('click', () => zoomAnimated(1.3));
 $('#btnZoomOut').addEventListener('click', () => zoomAnimated(1 / 1.3));
@@ -2585,6 +2717,7 @@ function renderViews() {
     });
   });
   updatePresHint();
+  renderViewRegions();
 }
 
 function startRenameView(span, v) {
@@ -2608,6 +2741,37 @@ function startRenameView(span, v) {
 
 function markActiveView() {
   [...viewsList.children].forEach((c, i) => c.classList.toggle('active', i === state.presentIdx));
+}
+
+/* 在画布上画出「已保存视图」对应的浅色区域框，方便定位；
+   默认不显示（state.showViewRegions），演示 / 聚焦时由 CSS 强制隐藏。 */
+function renderViewRegions() {
+  if (!viewRegions) return;
+  viewRegions.innerHTML = '';
+  if (!state.showViewRegions) return;
+  const vs = board().views || [];
+  vs.forEach((v, i) => {
+    if (v.cx == null || v.cy == null || !v.rw || !v.rh) return;
+    const box = document.createElement('div');
+    box.className = 'vr-box' + (i === state.presentIdx ? ' active' : '');
+    box.style.left = (v.cx - v.rw / 2) + 'px';
+    box.style.top = (v.cy - v.rh / 2) + 'px';
+    box.style.width = v.rw + 'px';
+    box.style.height = v.rh + 'px';
+    const tag = document.createElement('span');
+    tag.className = 'vr-tag';
+    tag.textContent = (v.name || ('视图 ' + (i + 1)));
+    box.appendChild(tag);
+    viewRegions.appendChild(box);
+  });
+}
+
+function setViewRegions(on) {
+  state.showViewRegions = on;
+  localStorage.setItem('canvas.viewRegions', on ? 'on' : 'off');
+  const btn = $('#btnRegions');
+  if (btn) btn.textContent = '区域：' + (on ? '开' : '关');
+  renderViewRegions();
 }
 
 /* 距离远或缩放跨度大 → 走「拉远—推进」的弧线，长距离跳转也不晕 */
@@ -2735,9 +2899,23 @@ $('#btnExitMode').addEventListener('click', () => {
 $('#btnCloseViews').addEventListener('click', () => toggleViewsPanel(false));
 $('#btnViewFit').addEventListener('click', () => setViewFit(!viewFit));
 { const b = $('#btnViewFit'); if (b) b.textContent = '跨屏适配：' + (viewFit ? '开' : '关'); }
+$('#btnRegions').addEventListener('click', () => setViewRegions(!state.showViewRegions));
+{ const b = $('#btnRegions'); if (b) b.textContent = '区域：' + (state.showViewRegions ? '开' : '关'); }
 
-/* 点画布其它地方收起视图面板 */
-stage.addEventListener('pointerdown', () => { if (viewsPanel.classList.contains('show')) toggleViewsPanel(false); });
+/* 点画布其它地方收起视图面板 / 场景抽屉 */
+stage.addEventListener('pointerdown', () => {
+  if (viewsPanel.classList.contains('show')) toggleViewsPanel(false);
+  if (!boardsPanel.classList.contains('hidden')) boardsPanel.classList.add('hidden');
+});
+
+/* 撤销 / 重做：移动端没有 ⌘Z，顶栏给可见按钮 */
+const btnUndo = $('#btnUndo'), btnRedo = $('#btnRedo');
+function updateHistoryButtons() {
+  if (btnUndo) btnUndo.classList.toggle('disabled', !undoStack.length);
+  if (btnRedo) btnRedo.classList.toggle('disabled', !redoStack.length);
+}
+if (btnUndo) btnUndo.addEventListener('click', () => { undo(); });
+if (btnRedo) btnRedo.addEventListener('click', () => { redo(); });
 
 /* ---------------- 云同步 ----------------
    数据存在腾讯云 CloudBase（经云函数中转），手机 / 电脑填同一个「空间码」即可互通。
@@ -3644,6 +3822,8 @@ function boot() {
   if (savedTheme) document.documentElement.dataset.theme = savedTheme;
   const q = localStorage.getItem('canvas.quality');
   setQuality(q === 'high' || q === 'low' ? q : 'auto');
+  state.showViewRegions = localStorage.getItem('canvas.viewRegions') === 'on';
+  { const b = $('#btnRegions'); if (b) b.textContent = '区域：' + (state.showViewRegions ? '开' : '关'); }
   load();
   /* 旧视图（没有中心锚）按当前屏幕补出 cx/cy/rw/rh，跨设备效果才能一致；
      只要还有视图缺锚就补（不靠一次性开关，避免旧部署的视图漏掉），补完立即存盘 */
@@ -3654,6 +3834,7 @@ function boot() {
   boardNameEl.value = board().name;
   renderBoard();
   setTool('select');
+  if (shapePop) shapePop.querySelectorAll('[data-shape]').forEach(x => x.classList.toggle('active', x.dataset.shape === state.shapeKind));
   applyCamera();
 
   if (state.fresh) {
@@ -3677,6 +3858,7 @@ function boot() {
   }
 
   lastSnapshot = snapshot();
+  updateHistoryButtons();
   requestAnimationFrame(fpsLoop);
   if (!localStorage.getItem('canvas.seen')) {
     localStorage.setItem('canvas.seen', '1');

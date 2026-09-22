@@ -628,8 +628,8 @@ html[data-theme="dark"] .board-card .thumb { background: rgba(255, 255, 255, .08
 .minimap {
   position: fixed;
   right: 12px; bottom: 22px;
-  width: 180px; height: 122px;
-  border-radius: var(--r-md);
+  width: 160px; height: 108px;
+  border-radius: var(--r-lg);
   overflow: hidden;
   z-index: 55;
   cursor: pointer;
@@ -902,7 +902,7 @@ body.immersive .minimap, body.immersive .boards-panel { opacity: 0; pointer-even
   display: flex;
   align-items: center;
   gap: 2px;
-  padding: 4px;
+  padding: 7px;
   border-radius: 999px;
   z-index: 59;
   transition: opacity .3s var(--ease-ios), transform .35s var(--ease-ios);
@@ -916,32 +916,32 @@ body.immersive .minimap, body.immersive .boards-panel { opacity: 0; pointer-even
   transition: background .18s, transform .18s var(--ease-spring), color .18s;
 }
 .views-dock button:active { transform: scale(.92); }
-.vd-nav { width: 30px; height: 30px; }
-.vd-nav svg { width: 16px; height: 16px; }
+.vd-nav { width: 38px; height: 38px; }
+.vd-nav svg { width: 19px; height: 19px; }
 .vd-nav:hover { background: rgba(0, 0, 0, .06); }
 html[data-theme="dark"] .vd-nav:hover { background: rgba(255, 255, 255, .1); }
 .vd-count {
-  min-width: 48px; height: 30px;
-  font: 700 12px/1 inherit;
+  min-width: 52px; height: 38px;
+  font: 700 13px/1 inherit;
   font-variant-numeric: tabular-nums;
   color: var(--text-2);
-  padding: 0 4px;
+  padding: 0 6px;
 }
 .vd-count:hover { background: rgba(0, 0, 0, .06); color: var(--text); }
 html[data-theme="dark"] .vd-count:hover { background: rgba(255, 255, 255, .1); }
 .vd-count.on { background: var(--accent); color: #fff; }
-.vd-div { width: 1px; height: 16px; background: var(--stroke-strong); margin: 0 3px; }
-.vd-add { width: 30px; height: 30px; color: var(--text-2); }
-.vd-add svg { width: 16px; height: 16px; }
+.vd-div { width: 1px; height: 20px; background: var(--stroke-strong); margin: 0 4px; }
+.vd-add { width: 38px; height: 38px; color: var(--text-2); }
+.vd-add svg { width: 19px; height: 19px; }
 .vd-add:hover { background: var(--accent); color: #fff; }
-.vd-play { width: 30px; height: 30px; }
-.vd-play svg { width: 15px; height: 15px; }
+.vd-play { width: 38px; height: 38px; }
+.vd-play svg { width: 18px; height: 18px; }
 .vd-play:hover { background: var(--accent); color: #fff; }
 .vd-play.on { background: var(--accent); color: #fff; box-shadow: 0 2px 8px rgba(0, 113, 227, .4); }
 
 /* 退出键：只在「演示」或「聚焦」时出现 —— 手机没有 Esc，必须留个出口 */
-.vd-exit { display: none; width: 30px; height: 30px; color: #ff3b30; }
-.vd-exit svg { width: 15px; height: 15px; }
+.vd-exit { display: none; width: 38px; height: 38px; color: #ff3b30; }
+.vd-exit svg { width: 18px; height: 18px; }
 .vd-exit:hover { background: rgba(255, 59, 48, .14); }
 body.presenting .vd-exit, body.immersive .vd-exit { display: grid; }
 
@@ -1327,3 +1327,92 @@ body.rm .ctxbar, body.rm .guides, body.rm .drop-hint { display: none !important;
   white-space: nowrap;
 }
 .vp-fit:hover { color: var(--text); border-color: var(--text-3); }
+
+/* ============================================================
+   新增：视图区域参考框 / 形状 / 弹层 / 撤销重做
+   ============================================================ */
+
+/* 视图区域参考框：放在视口内、跟随世界变换；默认空（不显示），演示/聚焦时强制隐藏 */
+#viewRegions {
+  position: absolute; left: 0; top: 0;
+  width: 0; height: 0;
+  transform-origin: 0 0;
+  pointer-events: none;
+  z-index: 6;
+}
+.vr-box {
+  position: absolute;
+  border: 1.5px dashed rgba(0, 113, 227, .55);
+  background: rgba(0, 113, 227, .05);
+  border-radius: 6px;
+}
+.vr-box.active { border-color: rgba(0, 113, 227, .9); background: rgba(0, 113, 227, .09); }
+.vr-tag {
+  position: absolute; left: 8px; top: 6px;
+  font-size: 12px; font-weight: 700; color: rgba(0, 90, 200, .9);
+  background: rgba(255, 255, 255, .72);
+  padding: 1px 7px; border-radius: 100px;
+  pointer-events: none;
+  white-space: nowrap;
+}
+html[data-theme="dark"] .vr-tag { background: rgba(20, 24, 30, .7); color: rgba(150, 200, 255, .95); }
+body.presenting #viewRegions, body.immersive #viewRegions { display: none !important; }
+
+/* 形状元素 */
+.el-shape .el-body { background: transparent; box-shadow: none; border-radius: 0; overflow: visible; }
+.el-shape .s-box {
+  position: absolute; inset: 0;
+  border: 2px solid var(--shape-c, var(--accent));
+  border-radius: 0;
+  display: grid; place-items: center;
+}
+.el-shape.shape-round .s-box { border-radius: 16px; }
+.el-shape.shape-ellipse .s-box { border-radius: 50%; }
+.el-shape.fill .s-box { background: var(--shape-fill, rgba(0, 113, 227, .14)); }
+.el-shape .s-label { font-size: 14px; font-weight: 600; color: var(--shape-c, var(--accent)); pointer-events: none; padding: 0 6px; text-align: center; }
+.el-shape.c-blue   { --shape-c: #3E92F0; --shape-fill: rgba(62, 146, 240, .16); }
+.el-shape.c-pink   { --shape-c: #F472A8; --shape-fill: rgba(244, 114, 168, .16); }
+.el-shape.c-yellow { --shape-c: #D9A22E; --shape-fill: rgba(217, 162, 46, .18); }
+.el-shape.c-green  { --shape-c: #36B765; --shape-fill: rgba(54, 183, 101, .16); }
+.el-shape.c-purple { --shape-c: #9A63F2; --shape-fill: rgba(154, 99, 242, .16); }
+.el-shape.c-gray   { --shape-c: #8A909B; --shape-fill: rgba(138, 144, 155, .16); }
+
+/* 形状 / 裁切 弹层（居中浮在工具栏上方） */
+.popover {
+  position: fixed; left: 50%; bottom: 88px;
+  transform: translateX(-50%);
+  display: none; align-items: center; gap: 6px;
+  padding: 8px; border-radius: var(--r-lg);
+  background: var(--surface); -webkit-backdrop-filter: var(--panel-blur); backdrop-filter: var(--panel-blur);
+  border: 1px solid var(--stroke); box-shadow: var(--shadow-md);
+  z-index: 70; max-width: calc(100vw - 24px);
+}
+.popover.show { display: flex; animation: ctxIn .3s var(--ease-spring) both; }
+#shapePop { flex: none; }
+#shapePop button {
+  width: 42px; height: 42px; border: 0; background: transparent;
+  border-radius: var(--r-md); cursor: pointer; display: grid; place-items: center; color: var(--text);
+}
+#shapePop button svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linejoin: round; }
+#shapePop button:hover { background: rgba(0, 0, 0, .06); }
+html[data-theme="dark"] #shapePop button:hover { background: rgba(255, 255, 255, .1); }
+#shapePop button.active { background: var(--accent); color: #fff; box-shadow: 0 2px 10px rgba(0, 113, 227, .4); }
+#cropPop { flex-wrap: wrap; justify-content: center; }
+#cropPop .pop-label { font-size: 11px; color: var(--text-3); padding: 0 4px; }
+#cropPop button {
+  border: 0; background: transparent; border-radius: var(--r-sm);
+  cursor: pointer; padding: 7px 11px; font: 700 13px/1 inherit; color: var(--text);
+}
+#cropPop button:hover { background: rgba(0, 0, 0, .06); }
+html[data-theme="dark"] #cropPop button:hover { background: rgba(255, 255, 255, .1); }
+
+/* 撤销 / 重做 禁用态 */
+.btn.disabled, .btn.icon.sm.disabled { opacity: .3; pointer-events: none; }
+
+/* 顶栏里的分隔线（撤销重做两侧） */
+.topbar .divider { width: 1px; height: 22px; background: var(--stroke-strong); margin: 0 4px; }
+
+/* 手机顶栏空间紧张：隐藏「已保存」状态，给撤销重做让位 */
+@media (max-width: 700px) {
+  .save-state { display: none; }
+}

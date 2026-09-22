@@ -8,7 +8,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>Canvas · 无边画布</title>
-<link rel="stylesheet" href="styles.css?v=1790092553">
+<link rel="stylesheet" href="styles.css?v=1790115327">
 </head>
 <body>
 
@@ -16,6 +16,7 @@
   <div id="grid"></div>
   <div id="viewport">
     <div id="world"></div>
+    <div id="viewRegions"></div>
   </div>
   <div id="marquee"></div>
   <svg id="guides" xmlns="http://www.w3.org/2000/svg"></svg>
@@ -45,6 +46,13 @@
     <span class="divider"></span>
     <button class="btn icon sm" id="btnFit" title="适应全部 (1)">
       <svg viewBox="0 0 24 24"><path d="M4 9V5a1 1 0 011-1h4M20 9V5a1 1 0 00-1-1h-4M4 15v4a1 1 0 001 1h4M20 15v4a1 1 0 01-1 1h-4"/></svg>
+    </button>
+    <span class="divider"></span>
+    <button class="btn icon sm" id="btnUndo" title="撤销 (⌘Z)">
+      <svg viewBox="0 0 24 24"><path d="M9 7L4 12l5 5"/><path d="M4 12h11a5 5 0 010 10h-1"/></svg>
+    </button>
+    <button class="btn icon sm" id="btnRedo" title="重做 (⌘⇧Z)">
+      <svg viewBox="0 0 24 24"><path d="M15 7l5 5-5 5"/><path d="M20 12H9a5 5 0 000 10h1"/></svg>
     </button>
   </div>
 
@@ -88,6 +96,7 @@
   <div class="vp-head">
     <span>视图</span>
     <button class="vp-fit" id="btnViewFit" title="让不同比例的屏幕看到同一片内容">跨屏适配：开</button>
+    <button class="vp-fit" id="btnRegions" title="在画布上标出每个视图已保存的区域，方便定位">区域：关</button>
     <button class="btn icon sm" id="btnCloseViews" title="收起列表">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
     </button>
@@ -125,10 +134,33 @@
   <button class="tool" data-tool="ink" title="画笔 (P)">
     <svg viewBox="0 0 24 24"><path d="M4 20c3-1 4-8 8-8s3 5 6 4"/><path d="M15.5 4.5l4 4"/></svg>
   </button>
+  <button class="tool" data-tool="shape" title="形状 (F)">
+    <svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>
+  </button>
+  <button class="tool" data-tool="crop" title="裁切图片（先选中一张图片）">
+    <svg viewBox="0 0 24 24"><path d="M6 2v14a2 2 0 002 2h14"/><path d="M2 6h14a2 2 0 012 2v14"/></svg>
+  </button>
   <span class="tb-div"></span>
   <button class="tool" id="btnErase" data-tool="erase" title="橡皮 (E)">
     <svg viewBox="0 0 24 24"><path d="M8 20H5l-2-2 10-10 7 7-5 5z"/><path d="M9 11l7 7"/></svg>
   </button>
+</div>
+
+<!-- ============ 形状 / 裁切 弹层 ============ -->
+<div class="popover" id="shapePop">
+  <button data-shape="rect" class="active" title="矩形"><svg viewBox="0 0 24 24"><rect x="4" y="6" width="16" height="12" rx="1.5"/></svg></button>
+  <button data-shape="round" title="圆角矩形"><svg viewBox="0 0 24 24"><rect x="4" y="6" width="16" height="12" rx="5"/></svg></button>
+  <button data-shape="ellipse" title="椭圆"><svg viewBox="0 0 24 24"><ellipse cx="12" cy="12" rx="9" ry="7"/></svg></button>
+</div>
+<div class="popover" id="cropPop">
+  <span class="pop-label">裁切比例</span>
+  <button data-ratio="1:1">1:1</button>
+  <button data-ratio="4:3">4:3</button>
+  <button data-ratio="3:4">3:4</button>
+  <button data-ratio="3:2">3:2</button>
+  <button data-ratio="2:3">2:3</button>
+  <button data-ratio="16:9">16:9</button>
+  <button data-ratio="9:16">9:16</button>
 </div>
 
 <!-- ============ 场景抽屉 ============ -->
@@ -238,6 +270,6 @@
 
 <input type="file" id="fileInput" accept="image/*" multiple hidden>
 
-<script src="app.js?v=1790092553"></script>
+<script src="app.js?v=1790115327"></script>
 </body>
 </html>
