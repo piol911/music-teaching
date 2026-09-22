@@ -75,6 +75,11 @@ const LIB_ITEM_KEY = id => 'cl-' + LIB + '-' + id;        // 单份作品
 const RM_HOST = 'cl-' + LIB + '-rmh';    // 电脑端写：当前在第几个视图
 const RM_CMD = 'cl-' + LIB + '-rmc';     // 手机端写：要执行的指令
 const LIB_CFG = 'canvas.lib.cfg';
+// —— 内置作品：《艺术（上）》腾讯文档转换件（首次启动自动加入目录，不覆盖用户已有画布）——
+const BUILTIN_ART_ID = 'builtin-art-sj';
+const BUILTIN_ART_NAME = '艺术（上）· 音乐鉴赏';
+const BUILTIN_ART_PAYLOAD = {"v":1,"activeId":"b9x0gn0n","boards":[{"id":"b9x0gn0n","name":"艺术（上）· 音乐鉴赏","camera":{"x":-120,"y":-60,"scale":0.92},"elements":[{"id":"eml8p4fz","type":"text","x":220,"y":260,"w":1160,"h":180,"text":"艺术（上）","fontSize":110},{"id":"ecyv7wff","type":"text","x":220,"y":470,"w":1160,"h":90,"text":"音乐欣赏 · 中职公共艺术鉴赏课","fontSize":46},{"id":"eaf2fe0k","type":"note","x":220,"y":610,"w":1180,"h":70,"text":"本画布含 8 个视图：封面 / 分类 / 钢琴 / 二胡 / 吹管弹拨 / 提琴民乐 / 民族声乐 / 花絮","color":"c-blue"},{"id":"eqdnu6qz","type":"note","x":1920,"y":70,"w":220,"h":64,"text":"一","color":"c-blue"},{"id":"eghuzo8v","type":"text","x":1920,"y":150,"w":1440,"h":120,"text":"音乐的分类","fontSize":66},{"id":"en2a6bx9","type":"text","x":1920,"y":300,"w":1440,"h":520,"text":"流行 Pop\n摇滚 Rock\n嘻哈 / 说唱 Hip-Hop / Rap\n民谣 Folk\nR&B / 灵魂乐 R&B / Soul\n乡村音乐 Country\n爵士乐 Jazz\n其他\n· 想一想：你觉得音乐还能怎么分？","fontSize":36},{"id":"eoysya74","type":"note","x":1920,"y":840,"w":1440,"h":56,"text":"资源：B 站《音乐歌曲分类及代表作品详解》合集（原文档含约 20 条视频链接，可回原《艺术 上》查阅）","color":"c-yellow"},{"id":"eubsu6o5","type":"note","x":3760,"y":70,"w":220,"h":64,"text":"二·1","color":"c-pink"},{"id":"ejcxmtdg","type":"text","x":3760,"y":150,"w":1440,"h":120,"text":"名曲鉴赏 · 钢琴","fontSize":66},{"id":"e6qkgghf","type":"text","x":3760,"y":300,"w":1440,"h":520,"text":"海上钢琴师（电影配乐）\n拉赫玛尼诺夫《第三钢琴协奏曲》— 朗朗\n卡农 Canon\n漫威动画主题音乐 — 朗朗\n《加勒比海盗》主题曲 He’s a Pirate\n《权力的游戏》主题曲 Main Title\n《环太平洋》Pacific Rim\n《杀死比尔》Battle Without Honor or Humanity","fontSize":36},{"id":"e4ksginv","type":"note","x":5600,"y":70,"w":220,"h":64,"text":"二·2","color":"c-green"},{"id":"e0f362uj","type":"text","x":5600,"y":150,"w":1440,"h":120,"text":"名曲鉴赏 · 二胡","fontSize":66},{"id":"ejbgpb9s","type":"text","x":5600,"y":300,"w":1440,"h":520,"text":"二泉映月\n赛马\n一步之遥\n悬溺","fontSize":36},{"id":"efcidavp","type":"note","x":7440,"y":70,"w":220,"h":64,"text":"二·3","color":"c-yellow"},{"id":"eh3m1z86","type":"text","x":7440,"y":150,"w":1440,"h":120,"text":"名曲鉴赏 · 吹管与弹拨","fontSize":66},{"id":"eaxy748h","type":"text","x":7440,"y":300,"w":1440,"h":520,"text":"唢呐《The Spectre》\n唢呐《百鸟朝凤》\n唢呐《summer》\n贝斯主题曲 — 于文文《冷夜雨》\n《加州旅馆》\n《欢乐斗地主》","fontSize":36},{"id":"ebyal5pb","type":"note","x":9280,"y":70,"w":220,"h":64,"text":"二·4","color":"c-blue"},{"id":"edospor3","type":"text","x":9280,"y":150,"w":1440,"h":120,"text":"名曲鉴赏 · 提琴与民乐","fontSize":66},{"id":"er0mwpzq","type":"text","x":9280,"y":300,"w":1440,"h":520,"text":"小提琴《亡灵序曲》\n《猫和老鼠》（小提 + 钢琴）\n小提琴《七里香》\n民乐《七里香》\n中西乐器对决","fontSize":36},{"id":"euub1rtb","type":"note","x":11120,"y":70,"w":220,"h":64,"text":"二·5","color":"c-pink"},{"id":"et5z86vl","type":"text","x":11120,"y":150,"w":1440,"h":120,"text":"名曲鉴赏 · 民族声乐","fontSize":66},{"id":"ekizfwda","type":"text","x":11120,"y":300,"w":1440,"h":520,"text":"呼麦《哪吒闹海 2》\n呼麦 — 马头琴（哈拉木吉）\nVitas《歌剧 2》\nVitas《星星》\n《达拉崩吧》— 周深\n《忐忑》— 龚琳娜\n男低音 / 约尔德唱法","fontSize":36},{"id":"et2aehry","type":"note","x":12960,"y":70,"w":220,"h":64,"text":"三","color":"c-green"},{"id":"ebq78ebm","type":"text","x":12960,"y":150,"w":1440,"h":120,"text":"花絮 · 趣味知识","fontSize":66},{"id":"ekve2c4a","type":"text","x":12960,"y":300,"w":1440,"h":520,"text":"约翰·凯奇《4 分 33 秒》— 关于“无声”的观念音乐\n《头文字 D》动画配乐\n· 提示：每个视图都可在画布里继续补充视频链接、图片与批注","fontSize":36}],"views":[{"id":"vrjagyqr","name":"封面","x":0,"y":0,"scale":1,"cx":800,"cy":450,"rw":1600,"rh":900,"thumb":""},{"id":"v6zyycai","name":"音乐的分类","x":1840,"y":0,"scale":1,"cx":2640,"cy":450,"rw":1600,"rh":900,"thumb":""},{"id":"v8lfz1l2","name":"名曲鉴赏 · 钢琴","x":3680,"y":0,"scale":1,"cx":4480,"cy":450,"rw":1600,"rh":900,"thumb":""},{"id":"vju8ofjb","name":"名曲鉴赏 · 二胡","x":5520,"y":0,"scale":1,"cx":6320,"cy":450,"rw":1600,"rh":900,"thumb":""},{"id":"vybtgdpj","name":"名曲鉴赏 · 吹管与弹拨","x":7360,"y":0,"scale":1,"cx":8160,"cy":450,"rw":1600,"rh":900,"thumb":""},{"id":"v45nbox4","name":"名曲鉴赏 · 提琴与民乐","x":9200,"y":0,"scale":1,"cx":10000,"cy":450,"rw":1600,"rh":900,"thumb":""},{"id":"vuwwm2j4","name":"名曲鉴赏 · 民族声乐","x":11040,"y":0,"scale":1,"cx":11840,"cy":450,"rw":1600,"rh":900,"thumb":""},{"id":"v7vxxn9m","name":"花絮 · 趣味知识","x":12880,"y":0,"scale":1,"cx":13680,"cy":450,"rw":1600,"rh":900,"thumb":""}]}]};
+const BUILTIN_ART_EL = (BUILTIN_ART_PAYLOAD.boards[0].elements || []).length;
 const LIB_LOCAL = 'canvas.lib.local';
 
 const state = {
@@ -3381,12 +3386,36 @@ $('#libList').addEventListener('click', async e => {
   else if (a === 'del') await libDelete(id);
 });
 
+async function libEnsureBuiltin() {
+  // 保证《艺术 上》这件作品存在于目录里（幂等：已有就跳过），并把内容落本地 + 云端
+  if (lib.items.some(x => x.id === BUILTIN_ART_ID)) {
+    // 内容万一丢了，补回本地
+    if (!localStorage.getItem(storeKey(BUILTIN_ART_ID))) {
+      try { localStorage.setItem(storeKey(BUILTIN_ART_ID), JSON.stringify(BUILTIN_ART_PAYLOAD)); } catch (e) {}
+    }
+    return;
+  }
+  try { localStorage.setItem(storeKey(BUILTIN_ART_ID), JSON.stringify(BUILTIN_ART_PAYLOAD)); } catch (e) {}
+  lib.items.push({ id: BUILTIN_ART_ID, name: BUILTIN_ART_NAME, el: BUILTIN_ART_EL, updatedAt: Date.now() });
+  libWriteLocal();
+  try { await cloudSet(LIB_ITEM_KEY(BUILTIN_ART_ID), { v: 1, boards: BUILTIN_ART_PAYLOAD.boards, activeId: BUILTIN_ART_PAYLOAD.activeId }); } catch (e) {}
+  await libPushIndex();
+}
+
 async function libBoot() {
   loadLibCfg();
   try { localStorage.removeItem(STORE_PREFIX + 'default'); } catch (e) { /* 忽略 */ }
   libMigrateLocal();                       // 旧的本机内容别丢
   await libPullIndex();
-  if (!lib.items.length) await libMigrateCloud();   // 旧空间码那份也搬过来
+  if (!lib.items.length) await libMigrateCloud();
+  const had = lib.items.length > 0;   // 旧空间码那份也搬过来
+  await libEnsureBuiltin();                          // 保证《艺术 上》在目录里（幂等）
+  if (had) {
+    const want = lib.items.some(x => x.id === lib.wid) ? lib.wid : lib.items[0].id;
+    await libOpen(want, true);
+  } else {
+    await libCreate('画布 1');                       // 全新用户：空白画布为当前，《艺术 上》作第二件
+  }
   if (!lib.items.length) {
     await libCreate('画布 1');
   } else {
