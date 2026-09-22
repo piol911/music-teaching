@@ -2607,11 +2607,12 @@ function markActiveView() {
 
 /* 距离远或缩放跨度大 → 走「拉远—推进」的弧线，长距离跳转也不晕 */
 /* ------------------------------------------------------------------
-   视图的跨屏一致
-   以前只存「相机中心 + 缩放倍数」，同样一组数字在手机（细长）和电脑（宽扁）上
-   看到的范围完全不同 —— 手机上看着正好，电脑上左右多出一大片。
-   现在额外记下「当时屏幕上显示的是哪一块世界区域」（rw / rh），
-   回放时按当前窗口把它整块装进屏幕（contain），比例再不同也能看到同一片内容。
+   视图的跨屏一致（以「屏幕中心」为锚）
+   以前只存「相机左上角 + 缩放倍数」，同样一组数字在手机（细长）和电脑（宽扁）上
+   看到的范围完全不同，而且内容会被钉在屏幕一角，看着就是没对齐。
+   现在记「屏幕中心对应的世界坐标 (cx,cy)」+「当时整块可视区域 (rw,rh)」，
+   回放时以中心为锚、把这块区域 contain 进任何比例的屏幕：
+   手机缩小把电脑的画面完整装进来，四周多出的区域均匀分布，不同设备看到的是同一片内容。
    ------------------------------------------------------------------ */
 let viewFit = localStorage.getItem('canvas.viewFit') !== 'off';   // 默认开
 
@@ -2623,21 +2624,27 @@ function setViewFit(on) {
   showToast(on ? '视图会按当前屏幕自动缩放，各设备看到的内容一致' : '视图按记录时的倍数显示');
 }
 
-/* 把某个视图换算成「当前窗口下」的相机参数 */
+/* 把某个视图换算成「当前窗口下」的相机参数
+   以视图中心 (cx,cy) 为锚，把记录时那块世界区域整块 contain 进当前屏幕：
+   比例不同 → 手机缩小、把电脑的画面完整装进来，四周多出的区域均匀分布。 */
 function viewTarget(v) {
-  if (!viewFit || !v || !v.rw || !v.rh) return { x: v.x, y: v.y, scale: v.scale };
-  // 留一点余量（0.94），免得内容紧贴屏幕边；再夹进缩放上下限
-  const s = Math.min(innerWidth / v.rw, innerHeight / v.rh) * 0.94;
-  return { x: v.rx != null ? v.rx : v.x, y: v.ry != null ? v.ry : v.y, scale: clamp(s, MIN_SCALE, MAX_SCALE) };
+  if (!viewFit || !v || v.cx == null || v.cy == null || !v.rw || !v.rh)
+    return { x: v.x, y: v.y, scale: v.scale };
+  // contain：取「按宽 / 按高」里较小的缩放，保证整块都进屏幕；留 5% 余量避开边缘
+  const s = clamp(Math.min(innerWidth / v.rw, innerHeight / v.rh) * 0.95, MIN_SCALE, MAX_SCALE);
+  // 相机 x/y 是「屏幕左上角」对应的世界坐标，换算成「中心对准 (cx,cy)」
+  return { x: v.cx - innerWidth / 2 / s, y: v.cy - innerHeight / 2 / s, scale: s };
 }
 
-/* 旧视图只有 x/y/scale：按当前屏幕补出它当时大致覆盖的区域（标注 est 便于日后重录） */
+/* 旧视图只有 x/y/scale：补出中心锚 (cx,cy) 和当时覆盖的世界区域（标注 est，便于日后重录） */
 function migrateViews() {
   let n = 0;
   state.boards.forEach(b => (b.views || []).forEach(v => {
-    if (!v.rw || !v.rh) {
+    if (v.cx == null || v.cy == null || !v.rw || !v.rh) {
       const s = v.scale || state.camera.scale || 1;
-      v.rx = v.x; v.ry = v.y; v.rw = innerWidth / s; v.rh = innerHeight / s; v.est = true;
+      const hw = innerWidth / 2 / s, hh = innerHeight / 2 / s;
+      v.cx = (v.x || 0) + hw; v.cy = (v.y || 0) + hh;
+      v.rw = hw * 2; v.rh = hh * 2; v.est = true;
       n++;
     }
   }));
@@ -3577,11 +3584,13 @@ function addViewNamed(name) {
   const b = board();
   if (!b.views) b.views = [];
   const s = state.camera.scale;
+  const hw = innerWidth / 2 / s, hh = innerHeight / 2 / s;          // 半宽 / 半高（世界单位）
   const v = {
     id: uid(), name,
-    x: state.camera.x, y: state.camera.y, scale: s,
-    // 当时屏幕上看到的世界区域（跨屏一致的关键：记区域而不是只记倍数）
-    rx: state.camera.x, ry: state.camera.y, rw: innerWidth / s, rh: innerHeight / s,
+    x: state.camera.x, y: state.camera.y, scale: s,                 // 保留旧字段（兼容 / 距离估算）
+    // 跨屏一致的关键：记「屏幕中心的世界坐标」+「当时整块可视区域」，
+    // 回放时以中心为锚把这块区域 contain 进任何比例的屏幕
+    cx: state.camera.x + hw, cy: state.camera.y + hh, rw: hw * 2, rh: hh * 2,
     thumb: captureThumb(),
   };
   b.views.push(v);
@@ -3594,11 +3603,11 @@ function boot() {
   const q = localStorage.getItem('canvas.quality');
   setQuality(q === 'high' || q === 'low' ? q : 'auto');
   load();
-  /* 旧视图（只存了缩放倍数）按当前屏幕补出区域，跨设备效果会接近很多；只做一次 */
-  if (!localStorage.getItem('canvas.viewMigrated')) {
+  /* 旧视图（没有中心锚）按当前屏幕补出 cx/cy/rw/rh，跨设备效果才能一致；
+     只要还有视图缺锚就补（不靠一次性开关，避免旧部署的视图漏掉），补完立即存盘 */
+  if (state.boards.some(b => (b.views || []).some(v => v.cx == null || v.rw == null))) {
     const n = migrateViews();
-    localStorage.setItem('canvas.viewMigrated', '1');
-    if (n) setTimeout(() => showToast(`已让 ${n} 个旧视图适配不同屏幕；想要最准可以在当前屏幕上重录一次`), 900);
+    if (n) { markDirty(); setTimeout(() => showToast(`已让 ${n} 个旧视图适配不同屏幕；想要最准可在当前屏幕上重录一次`), 900); }
   }
   boardNameEl.value = board().name;
   renderBoard();
