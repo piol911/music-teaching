@@ -435,6 +435,11 @@ function setBox(dom, d) {
   dom.style.transform = `translate3d(${d.x}px, ${d.y}px, 0)`;
 }
 
+/* 图片两条路：优先用 src（可能是 CDN 短链），没有 src 但有 imgId 时走云函数代读 */
+function imgProxyUrl(d) {
+  return (d && d.imgId) ? CLOUD_API + '?img=' + encodeURIComponent(d.imgId) : '';
+}
+
 function buildEl(d) {
   const dom = document.createElement('div');
   dom.className = elClass(d);
@@ -453,7 +458,7 @@ function buildEl(d) {
     body.appendChild(t);
   } else if (d.type === 'image') {
     const img = document.createElement('img');
-    img.src = d.src || '';
+    img.src = d.src || imgProxyUrl(d);   // src 被「体积过大只同步结构」抹掉时，用云函数代读兜底
     img.draggable = false;
     // 存在云上的图：万一 CDN 域名不可达，回落到云函数代读（同一份图，两条路）
     img.onerror = () => {
@@ -560,7 +565,8 @@ function refreshEl(d) {
     }
   } else if (d.type === 'image') {
     const img = dom.querySelector('img');
-    if (img && img.getAttribute('src') !== (d.src || '')) img.src = d.src || '';
+    const want = d.src || imgProxyUrl(d);
+    if (img && img.getAttribute('src') !== want) img.src = want;
   } else if (d.type === 'shape') {
     const box = dom.querySelector('.s-box');
     if (box) {
@@ -2901,7 +2907,7 @@ const cloud = {
   cloudTime: 0,      // 云端记录的更新时间
   busy: false, applying: false,
 };
-let cloudPushTimer = null, cloudPullTimer = null;
+let cloudPushTimer = null, cloudPullTimer = null, libPullTimer = null;
 
 function loadCloudCfg() {
   try { Object.assign(cloud, JSON.parse(localStorage.getItem(CLOUD_CFG) || '{}')); } catch (e) { /* 忽略 */ }
@@ -2914,11 +2920,33 @@ function ensureCloudTimers() {
   if (cloudPullTimer) return;
   /* 只有窗口可见时才轮询：后台标签页没必要一直拉（切回来时下面的 focus / visibilitychange 会补一次） */
   cloudPullTimer = setInterval(() => { if (cloud.on && !document.hidden) cloudPull(true); }, 5000);
+  /* 目录（有哪些画布）也要轮询 —— 否则另一台新加 / 改名 / 删掉的画布，
+     这边不重新加载页面就永远看不到，看着就像「没同步」 */
+  libPullTimer = setInterval(() => { if (lib.ready && !document.hidden) refreshLibraryIndex(); }, 15000);
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden && cloud.on) cloudPull(true);
+    if (!document.hidden) refreshLibraryIndex();
   });
   // 从别的窗口切回来时立刻拉一次（visibilitychange 只在同一标签页内可靠）
-  window.addEventListener('focus', () => { if (cloud.on && !document.hidden) cloudPull(true); });
+  window.addEventListener('focus', () => {
+    if (!document.hidden && cloud.on) cloudPull(true);
+    if (!document.hidden) refreshLibraryIndex();
+  });
+}
+
+/* 只刷新目录列表（名字 / 数量），不动当前正在编辑的画布内容 */
+function refreshLibraryIndex() {
+  if (!lib.ready) return;
+  libPullIndex().then(() => {
+    if ($('#libMask').classList.contains('show')) renderLib();
+    updateCloudUi();
+  }).catch(() => {});
+}
+
+/* 推送被拉取占用时的重试：宁可晚一点，也不能把这次改动丢掉 */
+function retryCloudPush() {
+  clearTimeout(cloudPushTimer);
+  cloudPushTimer = setTimeout(() => cloudPush(), 1200);
 }
 
 async function cloudConnect(key, quiet) {
@@ -3017,25 +3045,27 @@ function cloudPayload() {
 }
 
 async function cloudPush() {
-  if (!cloud.on || !cloud.key || cloud.busy || cloud.applying) return;
+  if (!cloud.on || !cloud.key) return;
+  /* 正在拉取 / 正在套用远端改动时先不推 —— 但**不能直接丢掉**，
+     否则这次编辑就永远上不去（表现就是「偶尔不同步」）。改成就近重试。 */
+  if (cloud.busy || cloud.applying) { retryCloudPush(); return; }
   cloud.busy = true;
   try {
     const { data } = cloudPayload();
-    /* 先读再写能避免旧页面盖新内容，但会多一次往返。
-       刚拉过（5 秒内）就说明手里这份是新的，直接写 —— 既快又省一半请求 */
-    const fresh = Date.now() - (cloud.lastPullAt || 0) < 5000;
+    /* 一律「先读云端 → 按场景 mt 合并 → 再写」。
+       以前有个「刚拉过 5 秒内就直接写」的捷径：上一次拉取如果只是取到数据、
+       并没套用任何改动（比如云端其实更旧），本机这份旧的就会被直接盖上去，
+       把另一台设备刚写的内容冲掉 —— 这正是「有时同步、有时被回退」的来源。 */
     let toWrite = data;
-    if (!fresh) {
-      try {
-        const cur = await cloudGet(cloud.key);
-        if (cur && cur.data && Array.isArray(cur.data.boards)) {
-          const merged = mergeBoards(data.boards, data.tomb, cur.data.boards, cur.data.tomb);
-          toWrite = { boards: merged.boards, tomb: merged.tomb, activeId: data.activeId, v: 1 };
-          // 合并结果如果跟本机不一样，也让本机看到（否则本机下次推还会再盖回去）
-          if (applyMerged(merged)) showToast('已并入云端的改动');
-        }
-      } catch (e) { /* 读不到就照原样写 */ }
-    }
+    try {
+      const cur = await cloudGet(cloud.key);
+      if (cur && cur.data && Array.isArray(cur.data.boards)) {
+        const merged = mergeBoards(data.boards, data.tomb, cur.data.boards, cur.data.tomb);
+        toWrite = { boards: merged.boards, tomb: merged.tomb, activeId: data.activeId, v: 1 };
+        // 合并结果如果跟本机不一样，也让本机看到（否则本机下次推还会再盖回去）
+        if (applyMerged(merged)) showToast('已并入云端的改动');
+      }
+    } catch (e) { /* 读不到就照原样写 */ }
     const r = await fetch(CLOUD_API, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -3227,6 +3257,8 @@ async function libPullIndex() {
       const tagged = /（本机）\s*$/.test(m.name || '') ? m.name : (m.name || '未命名') + '（本机）';
       lib.items.push(Object.assign({}, m, { name: clash ? tagged : m.name }));
     }
+    // 把「本机多出来的这份」写回云端目录，否则下一次轮询又会把它当新东西重复补传
+    await libPushIndex();
   }
   if (!lib.items.length) lib.items = local;
   libWriteLocal();
