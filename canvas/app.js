@@ -116,7 +116,7 @@ function markDirty() {
   // 给当前场景打时间戳：合并时靠它判断「哪边是新的」，
   // 这样两端同时改不同场景时，两边都能留下（不再整份覆盖）
   const b = board && state.activeId ? board() : null;
-  if (b) b.mt = Date.now();
+  if (b) { b.mt = Date.now(); if (b.__ph) delete b.__ph; }   // 一改就不再是空占位了
   saveStateEl.textContent = '保存中…';
   saveStateEl.classList.add('saving');
   clearTimeout(saveTimer);
@@ -170,7 +170,7 @@ function load() {
     state.activeId = data.activeId && data.boards.some(b => b.id === data.activeId) ? data.activeId : data.boards[0].id;
     state.fresh = false;
   } else {
-    state.boards = [seedBoard()];
+    state.boards = [blankBoard()];
     state.activeId = state.boards[0].id;
     state.fresh = true;
   }
@@ -182,40 +182,12 @@ function newBoard(name) {
   return { id: uid(), name: name || '未命名场景', camera: { x: 0, y: 0, scale: 1 }, elements: [] };
 }
 
-function seedBoard() {
-  const b = newBoard('欢迎');
-  const cx = 0, cy = 0;
-  const title = { id: uid(), type: 'text', x: cx - 260, y: cy - 300, w: 520, h: 74, text: '无边画布' };
-  b.elements.push(title);
-  const notes = [
-    ['拖动空白处平移\n按住空格也可以', 'c-yellow', -300, -180],
-    ['滚轮缩放\n⌘ + 滚轮 更精细', 'c-blue', -60, -180],
-    ['双击元素聚焦\n双击空白退出', 'c-pink', 180, -180],
-  ];
-  notes.forEach(([text, color, x, y]) => {
-    b.elements.push({ id: uid(), type: 'note', x, y, w: 210, h: 180, text, color });
-  });
-  b.elements.push({
-    id: uid(), type: 'note', x: -300, y: 50, w: 210, h: 150,
-    text: '拖便签边缘的圆点\n可以拉出连接线',
-    color: 'c-green',
-  });
-  b.elements.push({
-    id: uid(), type: 'note', x: -40, y: 50, w: 210, h: 150,
-    text: '⌘⇧R 记录视图\n⌘⇧P 开始演示',
-    color: 'c-purple',
-  });
-  const vid = {
-    id: uid(), type: 'video', x: 200, y: 50, w: 480, h: 306, bvid: 'BV1GJ411x7h7', title: '',
-  };
-  b.elements.push(vid);
-  b.elements.push({ id: uid(), type: 'note', x: -560, y: -180, w: 210, h: 150, text: '点底部 ▶ 图标\n粘贴 B 站链接', color: 'c-gray' });
-  // 示例连线
-  b.elements.push({
-    id: uid(), type: 'link', from: title.id, to: b.elements[1].id,
-    fromSide: 'auto', toSide: 'auto', arrow: 'end', curve: 'curve', x: 0, y: 0, w: 2, h: 2,
-  });
-  return b;
+/* 新建 / 首次进入某份画布时的默认场景：**空白**（用户要求：不要默认带元素）。
+   __ph 是「占位」标记：当这份画布在云端其实有内容时，占位场景会在合并时被丢掉，
+   免得手机无痕 / 换设备打开时,自己先冒出来一个空的欢迎画布把真正的内容挡住。
+   一旦用户在里面画了东西（markDirty），__ph 立刻清掉，就是一份正常场景了。 */
+function blankBoard(name) {
+  return { id: uid(), name: name || '未命名场景', camera: { x: 0, y: 0, scale: 1 }, elements: [], __ph: true };
 }
 
 /* ---------------- 历史 ---------------- */
@@ -3033,7 +3005,9 @@ function cloudStatus() {
 
 /* 云端文档：{ data: {boards, tomb, activeId}, updatedAt } */
 function cloudPayload() {
-  const data = { boards: state.boards, tomb: state.tomb || [], activeId: state.activeId, v: 1 };
+  // __ph 只是本机的「空占位」标记，别传到云端
+  const boards = state.boards.map(b => { const { __ph, ...rest } = b; return rest; });
+  const data = { boards, tomb: state.tomb || [], activeId: state.activeId, v: 1 };
   const txt = JSON.stringify(data);
   if (txt.length <= 2600000) return { data };
   // 太大就只同步结构（图片留在各设备），避免超出云函数请求体限制
@@ -3113,7 +3087,13 @@ function mergeBoards(localBoards, localTomb, cloudBoards, cloudTomb) {
   const tomb = mergeTomb(localTomb, cloudTomb);
   const order = [];                                  // 先按本机顺序排，云端新增的排后面
   const map = new Map();
-  (localBoards || []).forEach(b => { if (b && b.id) { map.set(b.id, b); order.push(b.id); } });
+  const cloudHas = (cloudBoards || []).some(c => c && c.id);
+  (localBoards || []).forEach(b => {
+    if (!b || !b.id) return;
+    // 本机这份只是「打开云端画布前先垫的空占位」、而云端确实有内容 → 丢掉占位，别挡着真内容
+    if (b.__ph && cloudHas) return;
+    map.set(b.id, b); order.push(b.id);
+  });
   (cloudBoards || []).forEach(b => {
     if (!b || !b.id) return;
     const cur = map.get(b.id);
@@ -3164,6 +3144,11 @@ async function cloudPull(silent) {
       cloud.lastPullAt = Date.now();
       if (j.updatedAt > cloud.lastPush + 1500 && Array.isArray(j.data.boards)) {
         const merged = mergeBoards(state.boards, state.tomb, j.data.boards, j.data.tomb);
+        // 本机原来的活动场景在合并后不存在了（典型：无痕/换设备时的空占位被丢掉）→ 跟随云端的活动场景
+        if (j.data.activeId && merged.boards.some(b => b.id === j.data.activeId)
+            && !merged.boards.some(b => b.id === state.activeId)) {
+          state.activeId = j.data.activeId;
+        }
         applied = applyMerged(merged);
         cloud.lastPush = j.updatedAt;
         saveCloudCfg();
@@ -3238,7 +3223,9 @@ async function libPullIndex() {
         }
       } catch (e) { /* 忽略 */ }
       const clash = lib.items.some(y => y.name === m.name);
-      lib.items.push(Object.assign({}, m, { name: clash ? m.name + '（本机）' : m.name }));
+      // 已经带「（本机）」的别再叠一层，否则来回几次会变成「（本机）（本机）…」
+      const tagged = /（本机）\s*$/.test(m.name || '') ? m.name : (m.name || '未命名') + '（本机）';
+      lib.items.push(Object.assign({}, m, { name: clash ? tagged : m.name }));
     }
   }
   if (!lib.items.length) lib.items = local;
@@ -3840,21 +3827,24 @@ function boot() {
   if (state.fresh) {
     fitAll(0);
     applyCamera();
-    addViewNamed('总览');
-    const vd = els().find(e => e.type === 'video');
-    if (vd) {
-      const sc = clamp(Math.min(innerWidth * 0.62 / vd.w, innerHeight * 0.68 / vd.h), 0.2, 2);
-      state.camera.x = vd.x + vd.w / 2 - innerWidth / 2 / sc;
-      state.camera.y = vd.y + vd.h / 2 - innerHeight / 2 / sc;
-      state.camera.scale = sc;
-      applyCamera();
-      addViewNamed('视频特写');
-      const v0 = board().views[0];
-      state.camera.x = v0.x; state.camera.y = v0.y; state.camera.scale = v0.scale;
-      applyCamera();
+    // 空白画布不预置任何视图，保持干净；只有真带内容时才给「总览 / 视频特写」两个起始视图
+    if (els().length) {
+      addViewNamed('总览');
+      const vd = els().find(e => e.type === 'video');
+      if (vd) {
+        const sc = clamp(Math.min(innerWidth * 0.62 / vd.w, innerHeight * 0.68 / vd.h), 0.2, 2);
+        state.camera.x = vd.x + vd.w / 2 - innerWidth / 2 / sc;
+        state.camera.y = vd.y + vd.h / 2 - innerHeight / 2 / sc;
+        state.camera.scale = sc;
+        applyCamera();
+        addViewNamed('视频特写');
+        const v0 = board().views[0];
+        state.camera.x = v0.x; state.camera.y = v0.y; state.camera.scale = v0.scale;
+        applyCamera();
+      }
+      renderViews();
+      markDirty();
     }
-    renderViews();
-    markDirty();
   }
 
   lastSnapshot = snapshot();
