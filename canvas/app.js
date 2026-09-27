@@ -131,7 +131,7 @@ function save() {
   try { str = JSON.stringify(payload); } catch (e) { return; }
   try {
     localStorage.setItem(storeKey(), str);
-    saveStateEl.textContent = '已保存';
+    saveStateEl.textContent = isOnline() ? '已保存' : '离线 · 已存本机';
   } catch (e) {
     // 超出配额：从最大的图片开始逐张剔除，能留几张留几张
     let dropped = 0, ok = false;
@@ -3057,6 +3057,33 @@ function retryCloudPush() {
   cloudPushTimer = setTimeout(() => cloudPush(), 1200);
 }
 
+/* ------------------------------------------------------------------
+   离线：内容本来就存在本机，编辑照常；真正要补的是「回到网络后能自动上传去」。
+   写失败（掉线 / 请求出错）时退避重试，别把这次改动丢在半路。
+   ------------------------------------------------------------------ */
+let cloudFailTimer = null;
+function schedulePushRetry() {
+  if (cloudFailTimer) return;
+  cloudFailTimer = setTimeout(() => {
+    cloudFailTimer = null;
+    if (navigator.onLine === false) return;      // 还离线就等 online 事件来叫
+    if (cloud.on && cloud.key) cloudPush();
+  }, 4000);
+}
+const isOnline = () => navigator.onLine !== false;
+function markOnlineState() {
+  if (!isOnline()) { saveStateEl.textContent = '离线 · 联网后自动同步'; saveStateEl.classList.remove('saving'); }
+}
+window.addEventListener('offline', () => { markOnlineState(); showToast('已离线，编辑照常保存，联网后会自动同步'); });
+window.addEventListener('online', () => {
+  cloud.pushFail = false;
+  updateCloudUi();
+  if (!cloud.on || !cloud.key) return;
+  cloudPull(false);            // 先取回别的设备的改动
+  scheduleCloudPush();         // 再把本机的补上去
+  showToast('已联网，正在同步');
+});
+
 async function cloudConnect(key, quiet) {
   cloud.key = key;
   cloud.on = true;
@@ -3193,6 +3220,7 @@ async function cloudPush() {
   } catch (e) {
     cloud.pushFail = true;
     console.warn('云同步写入失败', e);
+    schedulePushRetry();          // 掉线时这次改动不能就这么丢了
   } finally {
     cloud.busy = false;
     updateCloudUi();
