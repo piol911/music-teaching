@@ -3568,12 +3568,19 @@ $('#btnRemoteOpen').addEventListener('click', () => {
   showToast('地址已复制：' + url);
   window.open(url, '_blank');
 });
-$('#btnCloud').addEventListener('click', async () => {
+async function openLibrary() {
   $('#libMask').classList.add('show');
   renderLib();
   await libPullIndex();
   renderLib();
+}
+$('#btnCloud').addEventListener('click', openLibrary);
+/* 手机右下角的入口：场景 / 目录 */
+$('#btnNavBoards').addEventListener('click', () => {
+  if (viewsPanel.classList.contains('show')) toggleViewsPanel(false);
+  toggleBoards();
 });
+$('#btnNavLib').addEventListener('click', openLibrary);
 $('#libClose').addEventListener('click', () => $('#libMask').classList.remove('show'));
 $('#libMask').addEventListener('click', e => { if (e.target === $('#libMask')) $('#libMask').classList.remove('show'); });
 $('#libNew').addEventListener('click', async () => {

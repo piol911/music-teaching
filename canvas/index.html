@@ -8,7 +8,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>Canvas · 无边画布</title>
-<link rel="stylesheet" href="styles.css?v=1790526169">
+<link rel="stylesheet" href="styles.css?v=1790526971">
 </head>
 <body>
 
@@ -189,6 +189,19 @@
   <div class="mini-vp" id="miniVp"></div>
 </div>
 
+<!-- ============ 底部右侧入口：场景 / 目录（手机主入口，带文字） ============ -->
+<div class="nav-dock glass" id="navDock">
+  <button id="btnNavBoards" title="切换场景">
+    <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></svg>
+    <span>场景</span>
+  </button>
+  <span class="nd-div"></span>
+  <button id="btnNavLib" title="所有画布（云同步目录）">
+    <svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+    <span>目录</span>
+  </button>
+</div>
+
 <!-- ============ 选中浮动工具条 ============ -->
 <div class="ctxbar glass" id="ctxbar"></div>
 
@@ -270,6 +283,6 @@
 
 <input type="file" id="fileInput" accept="image/*" multiple hidden>
 
-<script src="app.js?v=1790526169"></script>
+<script src="app.js?v=1790526971"></script>
 </body>
 </html>

@@ -713,7 +713,7 @@ html[data-theme="dark"] .ctxbar .cx:hover { background: rgba(255, 255, 255, .1);
 /* 弹窗 */
 .modal-mask {
   position: fixed; inset: 0;
-  background: rgba(0, 0, 0, .28);
+  background: rgba(0, 0, 0, .42);
   -webkit-backdrop-filter: blur(4px);
   backdrop-filter: blur(4px);
   display: grid; place-items: center;
@@ -728,9 +728,8 @@ html[data-theme="dark"] .ctxbar .cx:hover { background: rgba(255, 255, 255, .1);
   max-width: calc(100vw - 40px);
   border-radius: var(--r-lg);
   padding: 24px;
-  background: var(--surface);
-  -webkit-backdrop-filter: var(--panel-blur);
-  backdrop-filter: var(--panel-blur);
+  /* 弹窗里是成片的文字列表，不能用小工具条那套 72% 玻璃——底下的画布会透上来糊成一片 */
+  background: var(--surface-opaque);
   border: 1px solid var(--stroke);
   box-shadow: var(--shadow-lg);
   transform: scale(.92) translateY(10px);
@@ -1133,10 +1132,12 @@ body.q-low .toolbar, body.q-low .topbar { transition-duration: .28s; }
   .views-panel { bottom: calc(120px + var(--sab)); left: 10px; width: 160px; max-height: 40vh; }
   .toast { bottom: calc(122px + var(--sab)); }
 
+  /* 场景抽屉在手机上改成从底部弹出（入口就在右下角，顺手） */
   .boards-panel {
-    top: calc(64px + var(--sat)); left: 10px;
+    top: auto; bottom: calc(130px + var(--sab)); left: 10px;
     width: min(268px, calc(100vw - 20px));
-    max-height: calc(100vh - 130px);
+    max-height: 52vh;
+    transform-origin: 0 100%;
   }
   .ctxbar { gap: 2px; padding: 4px; }
   .ctxbar .cx { width: 26px; height: 26px; }
@@ -1421,4 +1422,41 @@ html[data-theme="dark"] #cropPop button:hover { background: rgba(255, 255, 255, 
 /* 手机顶栏空间紧张：隐藏「已保存」状态，给撤销重做让位 */
 @media (max-width: 700px) {
   .save-state { display: none; }
+}
+
+/* ============================================================
+   底部右侧入口：场景 / 目录（手机上的主入口，带文字不怕认错）
+   左下已有「视图」Dock，这两个放右下对称；小地图在窄屏本来就隐藏。
+   ============================================================ */
+.nav-dock {
+  position: fixed;
+  right: 10px; bottom: calc(76px + var(--sab));
+  display: none;
+  align-items: center;
+  gap: 2px;
+  padding: 5px;
+  border-radius: 999px;
+  z-index: 59;
+}
+.nav-dock button {
+  border: 0; background: transparent; color: var(--text);
+  cursor: pointer;
+  display: grid; place-items: center; gap: 2px;
+  padding: 6px 11px;
+  border-radius: 999px;
+  font: 600 11px/1 inherit;
+  transition: background .18s, transform .18s var(--ease-spring);
+}
+.nav-dock button svg {
+  width: 18px; height: 18px;
+  fill: none; stroke: currentColor; stroke-width: 1.8;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+.nav-dock button:hover { background: rgba(0, 0, 0, .06); }
+html[data-theme="dark"] .nav-dock button:hover { background: rgba(255, 255, 255, .1); }
+.nav-dock button:active { transform: scale(.94); }
+.nav-dock .nd-div { width: 1px; height: 18px; background: var(--stroke-strong); margin: 0 2px; }
+/* 只在窄屏出现：桌面顶栏已有「场景」、面板里有「目录」，不用重复 */
+@media (max-width: 720px) {
+  .nav-dock { display: flex; }
 }
