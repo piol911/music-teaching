@@ -2213,7 +2213,6 @@ function toggleBoards(force) {
   boardsPanel.classList.toggle('hidden', !show);
   if (show) renderBoardList();
 }
-$('#btnBoards').addEventListener('click', () => toggleBoards());
 $('#btnNewBoard').addEventListener('click', () => {
   const b = newBoard('场景 ' + (state.boards.length + 1));
   pushHistory();
@@ -2536,6 +2535,18 @@ function gotoMini(e) {
   markDirty();
 }
 
+/* 小地图收起 / 展开（记住选择） */
+function setMiniFold(fold) {
+  minimap.classList.toggle('folded', fold);
+  try { localStorage.setItem('canvas.minimap', fold ? 'folded' : 'open'); } catch (e) { }
+  if (!fold) drawMinimap();          // 展开时容器尺寸变了，重画一次
+}
+$('#btnMiniFold').addEventListener('pointerdown', e => e.stopPropagation());   // 别触发地图跳转
+$('#btnMiniFold').addEventListener('click', e => {
+  e.stopPropagation();
+  setMiniFold(!minimap.classList.contains('folded'));
+});
+
 /* 参考线（目前未启用吸附，保留接口） */
 function refreshGuides() { guides.innerHTML = ''; }
 
@@ -2820,8 +2831,10 @@ function gotoView(i) {
   const t = viewTarget(v);
   const dist = Math.hypot(t.x - state.camera.x, t.y - state.camera.y) * state.camera.scale;
   const ratio = Math.max(state.camera.scale / t.scale, t.scale / state.camera.scale);
-  // 只有「距离远 + 缩放相近」才走拉远弧线；缩放跨度大时普通飞行更稳（弧线会闪）
-  const arc = dist > innerWidth * 1.1 && ratio < 1.8;
+  // 只有「距离远 + 缩放相近」才走拉远弧线；缩放跨度大时普通飞行更稳（弧线会闪）。
+  // 已经在飞行中（连续快速切视图）就不再走弧线——否则每次都从半路的相机重新拉远再推进，
+  // 看起来就是「先缩小再放大」。
+  const arc = dist > innerWidth * 1.1 && ratio < 1.8 && !camAnim;
   const ms = dur(arc ? 1050 : (ratio > 1.8 ? 900 : 780));
   if (arc) flyToArc(t.x, t.y, t.scale, ms);
   else flyTo(t.x, t.y, t.scale, ms);
@@ -3862,6 +3875,7 @@ function boot() {
   const q = localStorage.getItem('canvas.quality');
   setQuality(q === 'high' || q === 'low' ? q : 'auto');
   state.showViewRegions = localStorage.getItem('canvas.viewRegions') === 'on';
+  if (localStorage.getItem('canvas.minimap') === 'folded') minimap.classList.add('folded');
   { const b = $('#btnRegions'); if (b) b.textContent = '区域：' + (state.showViewRegions ? '开' : '关'); }
   load();
   /* 旧视图（没有中心锚）按当前屏幕补出 cx/cy/rw/rh，跨设备效果才能一致；

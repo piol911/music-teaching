@@ -8,7 +8,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>Canvas · 无边画布</title>
-<link rel="stylesheet" href="styles.css?v=1790526971">
+<link rel="stylesheet" href="styles.css?v=1790527703">
 </head>
 <body>
 
@@ -24,10 +24,6 @@
 
 <!-- ============ 顶栏 ============ -->
 <header class="topbar glass">
-  <button class="btn icon" id="btnBoards" title="场景 (⌘⇧B)">
-    <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></svg>
-  </button>
-
   <div class="board-title-wrap">
     <input id="boardName" class="board-name" value="未命名场景" spellcheck="false">
     <span class="board-meta" id="boardMeta">0 个元素</span>
@@ -183,22 +179,23 @@
   </div>
 </aside>
 
-<!-- ============ 小地图 ============ -->
+<!-- ============ 小地图（可收起） ============ -->
 <div class="minimap glass" id="minimap">
   <canvas id="miniCanvas" width="360" height="244"></canvas>
   <div class="mini-vp" id="miniVp"></div>
+  <button class="mini-fold" id="btnMiniFold" title="收起 / 展开小地图">
+    <svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
+  </button>
 </div>
 
-<!-- ============ 底部右侧入口：场景 / 目录（手机主入口，带文字） ============ -->
+<!-- ============ 底部右侧入口：场景 / 目录（全端统一，样式对齐左下视图 Dock） ============ -->
 <div class="nav-dock glass" id="navDock">
-  <button id="btnNavBoards" title="切换场景">
+  <button id="btnNavBoards" title="场景 (⌘⇧B)">
     <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></svg>
-    <span>场景</span>
   </button>
   <span class="nd-div"></span>
-  <button id="btnNavLib" title="所有画布（云同步目录）">
+  <button id="btnNavLib" title="目录 · 所有画布（云同步）">
     <svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
-    <span>目录</span>
   </button>
 </div>
 
@@ -283,6 +280,6 @@
 
 <input type="file" id="fileInput" accept="image/*" multiple hidden>
 
-<script src="app.js?v=1790526971"></script>
+<script src="app.js?v=1790527703"></script>
 </body>
 </html>
