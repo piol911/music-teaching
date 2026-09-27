@@ -8,7 +8,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>Canvas · 无边画布</title>
-<link rel="stylesheet" href="styles.css?v=1790530722">
+<link rel="stylesheet" href="styles.css?v=1790531296">
 </head>
 <body>
 
@@ -81,6 +81,11 @@
 
 <!-- 帧率（设置里打开才显示） -->
 <div id="fpsMeter">60 FPS</div>
+
+<!-- 退出聚焦 / 演示：独立于菜单栏，收起菜单栏时也不会被藏掉 -->
+<button class="exit-focus" id="btnExitFloat" title="退出聚焦 / 演示">
+  <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
+</button>
 
 <!-- ============ 视图 Dock：默认收在左下角，只留翻页键 ============ -->
 <div class="views-dock glass" id="viewsDock">
@@ -296,6 +301,6 @@
 
 <input type="file" id="fileInput" accept="image/*" multiple hidden>
 
-<script src="app.js?v=1790530722"></script>
+<script src="app.js?v=1790531296"></script>
 </body>
 </html>

@@ -968,6 +968,25 @@ html[data-theme="dark"] .vd-count:hover { background: rgba(255, 255, 255, .1); }
 .vd-exit:hover { background: rgba(255, 59, 48, .14); }
 body.presenting .vd-exit, body.immersive .vd-exit { display: grid; }
 
+/* 退出聚焦 / 演示的「保命按钮」：
+   以前唯一的出口是左下角视图 Dock 里的 ✕，可它就在菜单栏里 ——
+   一旦和「收起菜单栏」叠加，人就彻底出不来了（手机上尤其致命）。
+   这个按钮独立悬浮，任何情况下都在。 */
+.exit-focus {
+  position: fixed;
+  top: calc(12px + var(--sat)); right: 12px;
+  width: 38px; height: 38px;
+  border: 0; border-radius: 50%;
+  background: rgba(255, 59, 48, .94); color: #fff;
+  display: none; place-items: center;
+  cursor: pointer; z-index: 140;
+  box-shadow: 0 4px 14px rgba(255, 59, 48, .4);
+  transition: transform .18s var(--ease-spring);
+}
+.exit-focus svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; }
+.exit-focus:active { transform: scale(.9); }
+body.immersive .exit-focus, body.presenting .exit-focus { display: grid; }
+
 /* 演示 / 聚焦时都不淡化，保证手机上能看见 */
 body.presenting .views-dock { opacity: 1; }
 

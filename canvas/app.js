@@ -1283,13 +1283,16 @@ function focusOn(d) {
   select([d.id]);
   ctxbar.classList.remove('show');
 }
+/* ⚠️ 这里不能 `if (!state.focusId) return;`：
+   只要沉浸态还开着，就必须把界面恢复回来 —— 否则一旦 focusId 因为任何原因被清掉
+   （比如删掉了正在聚焦的元素），顶栏/工具栏就再也回不来，手机上彻底卡住。
+   相机回位只在本机确实存过 camBeforeFocus 时才做。 */
 function exitFocus(instant) {
-  if (!state.focusId) return;
+  const c = state.camBeforeFocus;
   state.focusId = null;
+  state.camBeforeFocus = null;
   setImmersive(false);
   for (const dom of domMap.values()) dom.classList.remove('dimmed');
-  const c = state.camBeforeFocus;
-  state.camBeforeFocus = null;
   if (c) flyTo(c.x, c.y, c.scale, instant ? 0 : 680);
 }
 function pushHistoryless() { }
@@ -1466,7 +1469,7 @@ function onDown(e) {
   if (state.tool === 'select') {
     // 触屏上单指拖空白更自然的是平移（框选留给桌面鼠标）
     if (e.pointerType === 'touch') { startPan(e); return; }
-    if (state.focusId) { exitFocus(); return; }   // 聚焦时点一下空白就退出
+    if (state.focusId || state.immersive) { exitFocus(); return; }   // 聚焦时点一下空白就退出
     startMarquee(e);
     return;
   }
@@ -1734,7 +1737,8 @@ stage.addEventListener('dblclick', e => {
     if (d.type === 'note' || d.type === 'text') { select([d.id]); enterEdit(d.id); }
     else focusOn(d);
   } else {
-    if (state.focusId) exitFocus();
+    // 只要还在聚焦态（哪怕 focusId 丢了）就先退出，双击空白是手机上最主要的出口
+    if (state.focusId || state.immersive) exitFocus();
     else fitAll(560);
   }
 });
@@ -1828,7 +1832,7 @@ window.addEventListener('keydown', e => {
     case 'ArrowLeft': if ((board().views || []).length) { e.preventDefault(); stepView(-1); } break;
     case 'Escape':
       if (state.presenting) { togglePresent(false); }
-      else if (state.focusId) exitFocus();
+      else if (state.focusId || state.immersive) exitFocus();
       else if (state.editingId) exitEdit();
       else if (helpMask.classList.contains('show')) helpMask.classList.remove('show');
       else if (modalMask.classList.contains('show')) closeModal();
@@ -2976,11 +2980,13 @@ $('#btnPlay').addEventListener('click', () => {
 });
 
 /* 退出键：手机没有 Esc，演示 / 聚焦时靠它回到正常模式 */
-$('#btnExitMode').addEventListener('click', () => {
-  if (state.presenting) togglePresent(false);
-  else if (state.focusId) exitFocus();
-  else setImmersive(false);
-});
+function exitMode() {
+  if (state.presenting) togglePresent(false);   // 演示有自己的退出流程（还原相机/收起全屏）
+  exitFocus();                                  // 聚焦：清 focusId + 相机回位；内部必清沉浸态
+}
+$('#btnExitMode').addEventListener('click', exitMode);
+/* 悬浮的「保命」退出键：收起菜单栏时也在，谁都能按到 */
+$('#btnExitFloat').addEventListener('click', exitMode);
 /* 中间那条现在只是「第几个」的指示器，退出一律用左下角的 ✕ —— 不再两套控件 */
 $('#btnCloseViews').addEventListener('click', () => toggleViewsPanel(false));
 $('#btnViewFit').addEventListener('click', () => setViewFit(!viewFit));
