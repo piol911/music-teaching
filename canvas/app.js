@@ -2276,6 +2276,10 @@ function bindSort(listEl, card, grip, commit) {
       if (!moved && Math.abs(dy) < 4) return;
       if (!moved) { moved = true; card.classList.add('sorting'); }
       card.style.transform = `translateY(${dy}px) scale(1.02)`;
+      // 列表比面板长时，拖到边缘自动滚动，否则够不到看不见的卡片
+      const lr = listEl.getBoundingClientRect();
+      if (ev.clientY < lr.top + 30) listEl.scrollTop -= 7;
+      else if (ev.clientY > lr.bottom - 30) listEl.scrollTop += 7;
       const r = card.getBoundingClientRect();
       const cy = r.top + r.height / 2;
       const kids = [...listEl.children];
@@ -2568,6 +2572,25 @@ function toggleViewsPanel(force) {
   const show = force === undefined ? !viewsPanel.classList.contains('show') : force;
   viewsPanel.classList.toggle('show', show);
   vdCount.classList.toggle('on', show);
+  if (show) ensureThumbs();          // 打开列表时顺手把缺的缩略图补上
+}
+
+/* 内置作品 / 云端同步来的视图 thumb 是空的；打开列表时把相机临时挪到每个视图上补画一张，
+   画完恢复原位（captureThumb 是纯 canvas 绘制，不动 DOM，所以可以同步连画多张）。 */
+function ensureThumbs() {
+  const vs = board().views || [];
+  if (!vs.length) return;
+  const keep = { ...state.camera };
+  let changed = false;
+  vs.forEach(v => {
+    if (v.thumb) return;
+    const t = viewTarget(v);
+    state.camera = { x: t.x, y: t.y, scale: t.scale };
+    const th = captureThumb();
+    if (th) { v.thumb = th; changed = true; }
+  });
+  state.camera = keep;
+  if (changed) { markDirty(); renderViews(); }
 }
 
 function thumbColor(e, dark) {
@@ -2665,7 +2688,7 @@ function captureView() {
   if (!b.views) b.views = [];
   const v = addViewNamed('视图 ' + (b.views.length + 1));
   pushHistory();
-  state.presentIdx = b.views.length - 1;
+  state.presentIdx = b.views.indexOf(v);   // 新视图插在当前之后，当前指针跟过去
   renderViews();
   renderBoardList();
   toggleViewsPanel(true);            // 展开看一眼刚记录的缩略图
@@ -3865,7 +3888,12 @@ function addViewNamed(name) {
     cx: state.camera.x + hw, cy: state.camera.y + hh, rw: hw * 2, rh: hh * 2,
     thumb: captureThumb(),
   };
-  b.views.push(v);
+  // 新视图插到「当前视图」后面，而不是总排在最后——
+  // 否则翻到第 3 页想顺手记一个，得滚到列表最底下才找得到
+  const at = (Number.isInteger(state.presentIdx) && state.presentIdx >= 0 && state.presentIdx < b.views.length)
+    ? state.presentIdx + 1
+    : b.views.length;
+  b.views.splice(at, 0, v);
   return v;
 }
 
