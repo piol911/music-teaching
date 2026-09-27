@@ -8,7 +8,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>Canvas · 无边画布</title>
-<link rel="stylesheet" href="styles.css?v=1790530029">
+<link rel="stylesheet" href="styles.css?v=1790530601">
 </head>
 <body>
 
@@ -53,6 +53,10 @@
 
   <div class="spacer"></div>
 
+  <!-- 断连时才出现的红色小图标（网络通畅时不显示，也不弹通知） -->
+  <div class="net-badge" id="netBadge" title="网络未连接">
+    <svg viewBox="0 0 24 24"><path d="M3 3l18 18"/><path d="M8.5 15.5a5 5 0 016.6 0"/><path d="M5 12a10 10 0 0113.4-.9"/><path d="M2 8.5A15 15 0 0111 5"/><circle cx="12" cy="19" r="1.4" fill="currentColor" stroke="none"/></svg>
+  </div>
   <button class="btn icon" id="btnSettings" title="设置">
     <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.6 1.6 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.6 1.6 0 00-1.8-.3 1.6 1.6 0 00-1 1.5v.2a2 2 0 11-4 0v-.1a1.6 1.6 0 00-1-1.5 1.6 1.6 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.6 1.6 0 00.3-1.8 1.6 1.6 0 00-1.5-1H3a2 2 0 110-4h.1a1.6 1.6 0 001.5-1 1.6 1.6 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.6 1.6 0 001.8.3H9a1.6 1.6 0 001-1.5V3a2 2 0 114 0v.1a1.6 1.6 0 001 1.5 1.6 1.6 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.6 1.6 0 00-.3 1.8V9a1.6 1.6 0 001.5 1h.2a2 2 0 110 4h-.1a1.6 1.6 0 00-1.5 1z"/></svg>
   </button>
@@ -292,6 +296,6 @@
 
 <input type="file" id="fileInput" accept="image/*" multiple hidden>
 
-<script src="app.js?v=1790530029"></script>
+<script src="app.js?v=1790530601"></script>
 </body>
 </html>

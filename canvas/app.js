@@ -3074,14 +3074,21 @@ const isOnline = () => navigator.onLine !== false;
 function markOnlineState() {
   if (!isOnline()) { saveStateEl.textContent = '离线 · 联网后自动同步'; saveStateEl.classList.remove('saving'); }
 }
-window.addEventListener('offline', () => { markOnlineState(); showToast('已离线，编辑照常保存，联网后会自动同步'); });
+/* 断连提示：只在顶栏右上角露一个小红点，不弹通知 */
+function updateNetBadge() {
+  const off = !isOnline() || !!cloud.pushFail;
+  document.body.classList.toggle('net-off', off);
+  const b = $('#netBadge');
+  if (b) b.title = !isOnline() ? '网络未连接 · 改动已存本机，联网后自动同步' : '连不上云端 · 改动已存本机，正在重试';
+}
+window.addEventListener('offline', () => { markOnlineState(); updateNetBadge(); });
 window.addEventListener('online', () => {
   cloud.pushFail = false;
   updateCloudUi();
+  updateNetBadge();
   if (!cloud.on || !cloud.key) return;
   cloudPull(false);            // 先取回别的设备的改动
   scheduleCloudPush();         // 再把本机的补上去
-  showToast('已联网，正在同步');
 });
 
 async function cloudConnect(key, quiet) {
@@ -3195,10 +3202,11 @@ async function cloudPush() {
     try {
       const cur = await cloudGet(cloud.key);
       if (cur && cur.data && Array.isArray(cur.data.boards)) {
-        const merged = mergeBoards(data.boards, data.tomb, cur.data.boards, cur.data.tomb);
-        toWrite = { boards: merged.boards, tomb: merged.tomb, activeId: data.activeId, v: 1 };
-        // 合并结果如果跟本机不一样，也让本机看到（否则本机下次推还会再盖回去）
-        if (applyMerged(merged)) showToast('已并入云端的改动');
+          const merged = mergeBoards(data.boards, data.tomb, cur.data.boards, cur.data.tomb);
+          toWrite = { boards: merged.boards, tomb: merged.tomb, activeId: data.activeId, v: 1 };
+          // 合并结果如果跟本机不一样，也让本机看到（否则本机下次推还会再盖回去）
+          // 静默处理：网络通畅时不要弹「已并入云端改动」这类提示，太吵
+          applyMerged(merged);
       }
     } catch (e) { /* 读不到就照原样写 */ }
     const r = await fetch(CLOUD_API, {
@@ -3318,7 +3326,7 @@ async function cloudPull(silent) {
         applied = applyMerged(merged);
         cloud.lastPush = j.updatedAt;
         saveCloudCfg();
-        if (applied && !silent) showToast('已合并别的设备的改动');
+        // 同上：同步正常时不弹提示，只在断连时用右上角那个红点提示
       }
     }
   } catch (e) {
@@ -3403,7 +3411,7 @@ async function libPushIndex() {
   try {
     const j = await cloudSet(LIB_INDEX_KEY, { v: 1, items: lib.items, active: lib.wid });
     const ok = !!(j && j.ok);
-    if (!ok && !cloud.idxWarned) { cloud.idxWarned = true; showToast('目录没写回云端（键可能不合法）'); }
+    if (!ok && !cloud.idxWarned) { cloud.idxWarned = true; console.warn('目录没写回云端：' + (j && j.error)); }
     return ok;
   } catch (e) { return false; }
 }
@@ -3784,6 +3792,7 @@ function updateCloudUi() {
   if (!btn) return;
   btn.textContent = '目录';
   btn.title = cloudStatus();
+  updateNetBadge();            // 推送/拉取跑完就刷新一下右上角那个红点
 }
 
 /* ============================================================

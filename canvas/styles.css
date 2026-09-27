@@ -1530,6 +1530,22 @@ body.menus-off .views-dock, body.menus-off .nav-dock {
   opacity: 0; transform: translateY(40px); pointer-events: none;
 }
 
+/* 断连指示：顶栏右上角一个小红点（正常联网时完全不出现） */
+.net-badge {
+  flex: none;
+  width: 28px; height: 28px; border-radius: 50%;
+  display: none; place-items: center;
+  color: #fff; background: #ff3b30;
+  box-shadow: 0 2px 8px rgba(255, 59, 48, .45);
+}
+.net-badge svg {
+  width: 15px; height: 15px;
+  fill: none; stroke: currentColor; stroke-width: 2;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+body.net-off .net-badge { display: grid; animation: netIn .3s var(--ease-spring) both; }
+@keyframes netIn { from { opacity: 0; transform: scale(.6); } to { opacity: 1; transform: none; } }
+
 /* 内部滚动条：细一点的圆条，别用系统那根粗灰条 */
 .vp-list, .bp-list, .lib-list, .modal, .rmui {
   scrollbar-width: thin;
