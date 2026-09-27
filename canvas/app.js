@@ -53,7 +53,9 @@ const MIN_SCALE = 0.08, MAX_SCALE = 5;
 /* ---------------- 状态 ---------------- */
 /* 本地存储的键跟着「当前打开的是哪份画布」走，多份才能并存互不覆盖 */
 const STORE_PREFIX = 'canvas.freeform.v1.';
-const lib = { items: [], wid: null, ready: false };   // 画布目录
+/* tomb：删掉的画布 id（墓碑）。没有它的话，删掉的作品会被本机缓存
+   在 libPullIndex 里当成「本机多出来的」又补回目录 —— 删了等于没删。 */
+const lib = { items: [], wid: null, ready: false, tomb: [] };   // 画布目录
 const storeKey = wid => STORE_PREFIX + (wid || lib.wid || 'default');
 const REMOTE = /[?&]remote=1/.test(location.search);   // ?remote=1 → 只当遥控器用，不加载画布
 
@@ -75,6 +77,7 @@ const LIB_ITEM_KEY = id => 'cl-' + LIB + '-' + id;        // 单份作品
 const RM_HOST = 'cl-' + LIB + '-rmh';    // 电脑端写：当前在第几个视图
 const RM_CMD = 'cl-' + LIB + '-rmc';     // 手机端写：要执行的指令
 const LIB_CFG = 'canvas.lib.cfg';
+const LIB_TOMB = 'canvas.lib.tomb';
 // —— 内置作品：《艺术（上）》腾讯文档转换件（首次启动自动加入目录，不覆盖用户已有画布）——
 const BUILTIN_ART_ID = 'builtin-art-sj';
 const BUILTIN_ART_NAME = '艺术（上）· 音乐鉴赏';
@@ -3373,6 +3376,11 @@ function loadLibCfg() {
 function saveLibCfg() { try { localStorage.setItem(LIB_CFG, JSON.stringify({ wid: lib.wid })); } catch (e) { /* 忽略 */ } }
 function libWriteLocal() { try { localStorage.setItem(LIB_LOCAL, JSON.stringify(lib.items)); } catch (e) { /* 忽略 */ } }
 function libReadLocal() { try { const a = JSON.parse(localStorage.getItem(LIB_LOCAL) || '[]'); return Array.isArray(a) ? a : []; } catch (e) { return []; } }
+/* 目录墓碑（删掉的作品），跟索引一起同步，别的设备拉到后也不会再显示 */
+function libWriteTomb() { try { localStorage.setItem(LIB_TOMB, JSON.stringify(lib.tomb.slice(-300))); } catch (e) { /* 忽略 */ } }
+function libReadTomb() { try { const a = JSON.parse(localStorage.getItem(LIB_TOMB) || '[]'); return Array.isArray(a) ? a : []; } catch (e) { return []; } }
+/* 这份作品是不是「已经删掉了」（删除时间晚于它的最后更新时间） */
+const libDead = it => it && tombAt(lib.tomb, it.id) > (it.updatedAt || 0);
 
 const elCount = () => state.boards.reduce((s, b) => s + (b.elements ? b.elements.length : 0), 0);
 function flushSave() { clearTimeout(saveTimer); save(); }
@@ -3387,12 +3395,20 @@ function libTouch(pushIdx) {
 async function libPullIndex() {
   try {
     const j = await cloudGet(LIB_INDEX_KEY);
-    if (j && j.data && Array.isArray(j.data.items)) lib.items = j.data.items;
+    if (j && j.data && Array.isArray(j.data.items)) {
+      lib.items = j.data.items;
+      if (Array.isArray(j.data.tomb)) {
+        lib.tomb = mergeTomb(lib.tomb, j.data.tomb);
+        libWriteTomb();
+      }
+    }
   } catch (e) { /* 离线就用本机那份 */ }
   // 本机多出来的（比如某台设备离线时自己建的那份）也并进目录，
   // 顺便把它的内容补传给云端 —— 否则那台设备上的东西就永远躺在暗处
+  // 云端删掉的、以及本机墓碑记过的，都从这里清掉（否则会被下面当成「本机多出来的」补回来）
+  if (lib.tomb.length) lib.items = lib.items.filter(x => !libDead(x));
   const local = libReadLocal();
-  const extra = local.filter(x => !lib.items.some(y => y.id === x.id));
+  const extra = local.filter(x => !lib.items.some(y => y.id === x.id) && !libDead(x));
   if (extra.length) {
     for (const m of extra) {
       try {
@@ -3415,7 +3431,7 @@ async function libPullIndex() {
 }
 async function libPushIndex() {
   try {
-    const j = await cloudSet(LIB_INDEX_KEY, { v: 1, items: lib.items, active: lib.wid });
+    const j = await cloudSet(LIB_INDEX_KEY, { v: 1, items: lib.items, active: lib.wid, tomb: lib.tomb });
     const ok = !!(j && j.ok);
     if (!ok && !cloud.idxWarned) { cloud.idxWarned = true; console.warn('目录没写回云端：' + (j && j.error)); }
     return ok;
@@ -3661,7 +3677,9 @@ async function libDelete(id) {
   const it = lib.items.find(x => x.id === id);
   if (!confirm('删除「' + ((it && it.name) || '未命名') + '」？里面的内容会一起删掉，删了找不回来。')) return;
   lib.items = lib.items.filter(x => x.id !== id);
+  lib.tomb.push({ id, t: Date.now() });     // 立个墓碑：别的设备拉到后也不会再显示
   libWriteLocal();
+  libWriteTomb();
   await libPushIndex();
   try { localStorage.removeItem(storeKey(id)); } catch (e) { /* 忽略 */ }
   renderLib();
@@ -3771,6 +3789,7 @@ async function libEnsureBuiltin() {
 
 async function libBoot() {
   loadLibCfg();
+  lib.tomb = libReadTomb();
   try { localStorage.removeItem(STORE_PREFIX + 'default'); } catch (e) { /* 忽略 */ }
   libMigrateLocal();                       // 旧的本机内容别丢
   await libPullIndex();
