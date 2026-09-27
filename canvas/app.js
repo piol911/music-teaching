@@ -1149,16 +1149,26 @@ ctxbar.addEventListener('pointerdown', e => {
   }
 });
 
-/* 字号：改完自动长高，避免文字被裁掉 */
+/* 字号：边框跟着**等比例**放大（以中心为锚），最后再按需长高避免文字被裁掉。
+   ⚠️ 以前只改 fontSize、靠 autoGrow 补高度：宽度不变 → 字一变大就疯狂折行，
+   于是「字只大了一点，框却又高又长」。现在整体等比缩放，视觉上就是整块变大。 */
 function adjustFontSize(ids, delta) {
   const list = ids.map(findEl).filter(d => d && (d.type === 'note' || d.type === 'text'))
     .filter(d => clamp(Math.round(fontSizeOf(d) + delta), 10, 120) !== fontSizeOf(d));
   if (!list.length) return;
   pushHistory();
   list.forEach(d => {
-    d.fontSize = clamp(Math.round(fontSizeOf(d) + delta), 10, 120);
+    const old = fontSizeOf(d);
+    const next = clamp(Math.round(old + delta), 10, 120);
+    const k = next / old;
+    d.fontSize = next;
+    const w2 = clamp(Math.round(d.w * k), 40, 8000);
+    const h2 = clamp(Math.round(d.h * k), 24, 8000);
+    d.x += (d.w - w2) / 2;          // 以中心为锚，别让框往右下角跑
+    d.y += (d.h - h2) / 2;
+    d.w = w2; d.h = h2;
     refreshEl(d);
-    autoGrow(d);
+    autoGrow(d);                    // 万一还差一点高度再补
   });
   updateCtxbar();
   drawMinimap();
@@ -1731,9 +1741,9 @@ function bindDrag(e) {
   e.preventDefault();
 }
 
-/* 双击 */
-stage.addEventListener('dblclick', e => {
-  const elDom = e.target.closest('.el');
+/* 双击：元素 → 便签/文字进编辑，其它进聚焦；空白 → 退出聚焦或全览。
+   （触屏那边不走 dblclick，见下面的 tapTrack） */
+function handleDoubleTap(elDom) {
   if (elDom) {
     const d = findEl(elDom.dataset.id);
     if (!d) return;
@@ -1744,6 +1754,34 @@ stage.addEventListener('dblclick', e => {
     if (state.focusId || state.immersive) exitFocus();
     else fitAll(560);
   }
+}
+stage.addEventListener('dblclick', e => handleDoubleTap(e.target.closest('.el')));
+
+/* ------------------------------------------------------------------
+   触屏上的「双击」自己判定。
+   iOS 在我们接管了 pointerdown/up（且设了 touch-action: none）之后，
+   不再可靠地派发 dblclick —— 表现就是「手机双击进不去编辑」。
+   这里在 pointerup 里比对：320ms 内、位移 12px 内、同一个元素（或都在空白处）。
+   ------------------------------------------------------------------ */
+let tapStart = null, lastTap = null;
+stage.addEventListener('pointerdown', e => {
+  if (e.pointerType === 'touch') tapStart = { x: e.clientX, y: e.clientY };
+});
+window.addEventListener('pointerup', e => {
+  if (e.pointerType !== 'touch' || !tapStart) return;
+  const moved = Math.abs(e.clientX - tapStart.x) + Math.abs(e.clientY - tapStart.y) > 12;
+  tapStart = null;
+  if (moved) { lastTap = null; return; }              // 拖过了，不算点击
+  const el = e.target && e.target.closest ? e.target.closest('.el') : null;
+  const id = el ? el.dataset.id : '';
+  const now = Date.now();
+  if (lastTap && now - lastTap.t < 320 && lastTap.id === id
+      && Math.abs(e.clientX - lastTap.x) < 30 && Math.abs(e.clientY - lastTap.y) < 30) {
+    lastTap = null;
+    handleDoubleTap(el);
+    return;
+  }
+  lastTap = { t: now, x: e.clientX, y: e.clientY, id };
 });
 
 /* 滚轮：缩放 / 平移 */
