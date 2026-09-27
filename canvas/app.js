@@ -2187,15 +2187,15 @@ function zoomAnimated(f) {
 }
 $('#zoomVal').addEventListener('click', () => flyTo(state.camera.x, state.camera.y, 1, dur(380), EASE_OUT));
 $('#btnFit').addEventListener('click', () => fitAll());
-$('#btnHelp').addEventListener('click', () => helpMask.classList.add('show'));
-
-$('#btnTheme').addEventListener('click', () => {
+/* 帮助 / 深色模式：按钮都搬进右上角「设置」了，这里只留可复用的动作 */
+function toggleHelp() { helpMask.classList.add('show'); }
+function toggleTheme() {
   const now = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
   document.documentElement.dataset.theme = now;
   localStorage.setItem('canvas.theme', now);
   drawMinimap();
   renderBoardList();
-});
+}
 
 const boardNameEl = $('#boardName');
 boardNameEl.addEventListener('input', () => {
@@ -2406,8 +2406,9 @@ function staggerIn() {
 }
 
 function updateBoardMeta() {
-  const n = els().length;
-  $('#boardMeta').textContent = n + ' 个元素';
+  // 顶栏不再显示「x 个元素」
+  const el = $('#boardMeta');
+  if (el) el.textContent = '';
 }
 
 /* 导入 / 导出 / 清空 */
@@ -2550,6 +2551,64 @@ $('#btnMiniFold').addEventListener('click', e => {
   e.stopPropagation();
   setMiniFold(!minimap.classList.contains('folded'));
 });
+
+/* ---------------- 设置：右上角齿轮 ----------------
+   把原来散在顶栏 / 视图面板 / 场景面板里的开关都收拢到这儿。 */
+const setMenu = $('#setMenu');
+function toggleSetMenu(force) {
+  if (!setMenu) return;
+  const show = force === undefined ? !setMenu.classList.contains('show') : force;
+  setMenu.classList.toggle('show', show);
+  if (show) syncSetMenu();
+}
+function setFps(on) {
+  document.body.classList.toggle('fps-on', on);
+  try { localStorage.setItem('canvas.fps', on ? 'on' : 'off'); } catch (e) { }
+}
+function setMenus(off) {
+  document.body.classList.toggle('menus-off', off);
+  try { localStorage.setItem('canvas.menus', off ? 'off' : 'on'); } catch (e) { }
+}
+function syncSetMenu() {
+  if (!setMenu) return;
+  const on = {
+    theme: document.documentElement.dataset.theme === 'dark',
+    minimap: !minimap.classList.contains('folded'),
+    fps: document.body.classList.contains('fps-on'),
+    menus: document.body.classList.contains('menus-off'),
+    viewfit: !!viewFit,
+    regions: !!state.showViewRegions,
+  };
+  setMenu.querySelectorAll('[data-set]').forEach(b => b.classList.toggle('on', !!on[b.dataset.set]));
+  setMenu.querySelectorAll('[data-q]').forEach(b => b.classList.toggle('on', b.dataset.q === state.quality));
+  const pb = setMenu.querySelector('[data-set="present"] .set-go');
+  if (pb) pb.textContent = state.presenting ? '退出演示' : '进入演示';
+}
+if (setMenu) {
+  $('#btnSettings').addEventListener('click', () => toggleSetMenu());
+  document.addEventListener('pointerdown', e => {
+    if (!setMenu.classList.contains('show')) return;
+    if (setMenu.contains(e.target)) return;
+    if (e.target.closest && e.target.closest('#btnSettings')) return;
+    toggleSetMenu(false);
+  });
+  setMenu.addEventListener('click', e => {
+    const q = e.target.closest('[data-q]');
+    if (q) { setQuality(q.dataset.q); syncSetMenu(); return; }
+    const row = e.target.closest('[data-set]');
+    if (!row) return;
+    const k = row.dataset.set;
+    if (k === 'theme') toggleTheme();
+    else if (k === 'minimap') setMiniFold(!minimap.classList.contains('folded'));   // 收着就展开，开着就收起
+    else if (k === 'fps') setFps(!document.body.classList.contains('fps-on'));
+    else if (k === 'menus') setMenus(!document.body.classList.contains('menus-off'));
+    else if (k === 'viewfit') setViewFit(!viewFit);
+    else if (k === 'regions') setViewRegions(!state.showViewRegions);
+    else if (k === 'present') { toggleSetMenu(false); togglePresent(); return; }
+    else if (k === 'help') { toggleSetMenu(false); toggleHelp(); return; }
+    syncSetMenu();
+  });
+}
 
 /* 参考线（目前未启用吸附，保留接口） */
 function refreshGuides() { guides.innerHTML = ''; }
@@ -3584,8 +3643,8 @@ function renderLib() {
         <span class="lib-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><rect x="3" y="4.5" width="18" height="15" rx="3"/><path d="M7.5 9.5h9M7.5 13.5h5"/></svg></span>
         <span class="lib-main">
           <span class="lib-name">${escapeHtml(it.name || '未命名')}</span>
-          <span class="lib-meta">${it.el || 0} 个元素 · ${fmtTime(it.updatedAt)}</span>
         </span>
+        <span class="lib-time">${fmtTime(it.updatedAt)}</span>
         <span class="lib-acts">
           <button data-a="rename" title="改名" aria-label="改名">&#9998;</button>
           <button data-a="dup" title="复制一份" aria-label="复制">&#9147;</button>
@@ -3848,14 +3907,14 @@ function setQuality(q) {
   const p = $('#btnPerfPanel');
   if (p) p.textContent = '动效：' + label;
 }
-$('#btnPerf').addEventListener('click', () => {
+function cycleQuality() {
   const order = ['auto', 'high', 'low'];
   const next = order[(order.indexOf(state.quality) + 1) % 3];
   setQuality(next);
   showToast({ auto: '动效：自动（按帧率调节）', high: '动效：全部开启', low: '动效：精简模式（更流畅）' }[next]);
-});
-/* 竖屏手机上顶栏的 ⚡ 是隐藏的，场景面板里再给一个入口 */
-$('#btnPerfPanel').addEventListener('click', () => $('#btnPerf').click());
+}
+/* 场景面板里保留一个入口（顶栏的 ⚡ 已并入设置） */
+$('#btnPerfPanel').addEventListener('click', cycleQuality);
 
 let fpsFrames = 0, fpsAt = 0, fpsAvg = 60, autoDegraded = false;
 function fpsLoop(now) {
@@ -3865,6 +3924,10 @@ function fpsLoop(now) {
     const fps = fpsFrames * 1000 / (now - fpsAt);
     fpsAvg = fpsAvg * 0.35 + fps * 0.65;
     fpsFrames = 0; fpsAt = now;
+    if (document.body.classList.contains('fps-on')) {
+      const m = $('#fpsMeter');
+      if (m) m.textContent = Math.round(fpsAvg) + ' FPS';
+    }
     if (state.quality === 'auto' && !autoDegraded && fpsAvg < 38) {
       autoDegraded = true;
       setQuality('low');
@@ -3904,6 +3967,8 @@ function boot() {
   setQuality(q === 'high' || q === 'low' ? q : 'auto');
   state.showViewRegions = localStorage.getItem('canvas.viewRegions') === 'on';
   if (localStorage.getItem('canvas.minimap') === 'folded') minimap.classList.add('folded');
+  if (localStorage.getItem('canvas.fps') === 'on') document.body.classList.add('fps-on');
+  if (localStorage.getItem('canvas.menus') === 'off') document.body.classList.add('menus-off');
   { const b = $('#btnRegions'); if (b) b.textContent = '区域：' + (state.showViewRegions ? '开' : '关'); }
   load();
   /* 旧视图（没有中心锚）按当前屏幕补出 cx/cy/rw/rh，跨设备效果才能一致；

@@ -8,7 +8,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>Canvas · 无边画布</title>
-<link rel="stylesheet" href="styles.css?v=1790528269">
+<link rel="stylesheet" href="styles.css?v=1790529012">
 </head>
 <body>
 
@@ -26,7 +26,6 @@
 <header class="topbar glass">
   <div class="board-title-wrap">
     <input id="boardName" class="board-name" value="未命名场景" spellcheck="false">
-    <span class="board-meta" id="boardMeta">0 个元素</span>
   </div>
 
   <div class="spacer"></div>
@@ -54,17 +53,30 @@
 
   <div class="spacer"></div>
 
-  <button class="btn icon" id="btnPerf" title="动效质量">
-    <svg viewBox="0 0 24 24"><path d="M13 2L4.5 13.5H11l-1 8.5 8.5-11.5H12z"/></svg>
-  </button>
-  <button class="btn icon" id="btnTheme" title="深色 / 浅色">
-    <svg viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z"/></svg>
-  </button>
-  <button class="btn icon" id="btnHelp" title="快捷键">
-    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 114 2c-.8.6-1.5 1-1.5 2"/><circle cx="12" cy="17" r=".6" fill="currentColor"/></svg>
+  <button class="btn icon" id="btnSettings" title="设置">
+    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.6 1.6 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.6 1.6 0 00-1.8-.3 1.6 1.6 0 00-1 1.5v.2a2 2 0 11-4 0v-.1a1.6 1.6 0 00-1-1.5 1.6 1.6 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.6 1.6 0 00.3-1.8 1.6 1.6 0 00-1.5-1H3a2 2 0 110-4h.1a1.6 1.6 0 001.5-1 1.6 1.6 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.6 1.6 0 001.8.3H9a1.6 1.6 0 001-1.5V3a2 2 0 114 0v.1a1.6 1.6 0 001 1.5 1.6 1.6 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.6 1.6 0 00-.3 1.8V9a1.6 1.6 0 001.5 1h.2a2 2 0 110 4h-.1a1.6 1.6 0 00-1.5 1z"/></svg>
   </button>
   <div class="save-state" id="saveState">已保存</div>
 </header>
+
+<!-- ============ 设置（右上角齿轮） ============ -->
+<div class="set-menu glass" id="setMenu">
+  <div class="set-row" data-set="theme"><span>深色模式</span><i class="sw-btn"></i></div>
+  <div class="set-row" data-set="minimap"><span>小地图</span><i class="sw-btn"></i></div>
+  <div class="set-row" data-set="fps"><span>显示帧率</span><i class="sw-btn"></i></div>
+  <div class="set-row" data-set="menus"><span>收起菜单栏</span><i class="sw-btn"></i></div>
+  <div class="set-row" data-set="viewfit"><span>跨屏适配</span><i class="sw-btn"></i></div>
+  <div class="set-row" data-set="regions"><span>视图区域框</span><i class="sw-btn"></i></div>
+  <div class="set-row"><span>动效质量</span>
+    <span class="seg"><button data-q="auto">自动</button><button data-q="high">全部</button><button data-q="low">精简</button></span>
+  </div>
+  <div class="set-div"></div>
+  <div class="set-row" data-set="present"><span>演示模式</span><button class="set-go">进入演示</button></div>
+  <div class="set-row" data-set="help"><span>操作方式</span><button class="set-go">查看说明</button></div>
+</div>
+
+<!-- 帧率（设置里打开才显示） -->
+<div id="fpsMeter">60 FPS</div>
 
 <!-- ============ 视图 Dock：默认收在左下角，只留翻页键 ============ -->
 <div class="views-dock glass" id="viewsDock">
@@ -280,6 +292,6 @@
 
 <input type="file" id="fileInput" accept="image/*" multiple hidden>
 
-<script src="app.js?v=1790528269"></script>
+<script src="app.js?v=1790529012"></script>
 </body>
 </html>
