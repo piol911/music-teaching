@@ -958,6 +958,18 @@ function select(ids, additive = false) {
 function clearSelection() { select([]); }
 
 let ctxSig = '';
+
+/* 读 safe-area（单位 px）：Safari 普通标签页里是 0，
+   「添加到主屏幕」后顶部约 59px（刘海/灵动岛）、底部约 34px（Home 横条）。
+   CSS 里有 --sat / --sab 两个变量，这里读的是浏览器算好的结果；读不到就按 0 处理。 */
+function safeInsetTop() {
+  const v = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--sat'));
+  return isNaN(v) ? 0 : v;
+}
+function safeInsetBottom() {
+  const v = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--sab'));
+  return isNaN(v) ? 0 : v;
+}
 function updateCtxbar() {
   const ids = [...state.selection];
   const list = ids.map(findEl).filter(Boolean);
@@ -989,11 +1001,12 @@ function updateCtxbar() {
   const w = ctxbar.offsetWidth || 200;
   const h = ctxbar.offsetHeight || 38;
   const narrow = innerWidth < 700;
-  const bottomLimit = innerHeight - (narrow ? 88 : 70);   // 手机底部还有工具栏 + 安全区
+  const sat = safeInsetTop(), sab = safeInsetBottom();
+  const bottomLimit = innerHeight - (narrow ? 88 : 70) - sab;   // 手机底部还有工具栏 + Home 横条
   // 元素贴着屏幕下边时，把工具条翻到元素上方，别压在工具栏上
   let top = botY + 16;
   if (top > bottomLimit) top = topY - 16 - h;
-  top = clamp(top, 62, Math.max(62, bottomLimit));
+  top = clamp(top, 62 + sat, Math.max(62 + sat, bottomLimit));
   const left = clamp(sx - w / 2, 8, Math.max(8, innerWidth - w - 8));
   ctxbar.style.left = left + 'px';
   ctxbar.style.top = top + 'px';
