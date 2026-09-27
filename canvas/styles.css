@@ -1258,7 +1258,11 @@ html[data-theme="dark"] .lock-msg.warn { color: #fb923c; }
   background: var(--surface-solid); border: 1px solid var(--stroke); color: var(--text-2); }
 .lib-ico svg { width: 18px; height: 18px; }
 .lib-main { flex: 1; min-width: 0; }
-.lib-name { font-size: 14px; font-weight: 550; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lib-name {
+  display: block;                                 /* 必须 block，省略号才会生效（inline 上 overflow 无效） */
+  font-size: 14px; font-weight: 550; color: var(--text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 /* 编辑时间：靠右对齐（不再显示元素个数） */
 .lib-time {
   flex: none; text-align: right; margin-left: auto;
@@ -1524,6 +1528,38 @@ body.menus-off .toolbar {
 }
 body.menus-off .views-dock, body.menus-off .nav-dock {
   opacity: 0; transform: translateY(40px); pointer-events: none;
+}
+
+/* 内部滚动条：细一点的圆条，别用系统那根粗灰条 */
+.vp-list, .bp-list, .lib-list, .modal, .rmui {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 0, 0, .18) transparent;
+}
+.vp-list::-webkit-scrollbar, .bp-list::-webkit-scrollbar,
+.lib-list::-webkit-scrollbar, .modal::-webkit-scrollbar, .rmui::-webkit-scrollbar {
+  width: 8px; height: 8px;
+}
+.vp-list::-webkit-scrollbar-track, .bp-list::-webkit-scrollbar-track,
+.lib-list::-webkit-scrollbar-track, .modal::-webkit-scrollbar-track, .rmui::-webkit-scrollbar-track {
+  background: transparent;
+}
+.vp-list::-webkit-scrollbar-thumb, .bp-list::-webkit-scrollbar-thumb,
+.lib-list::-webkit-scrollbar-thumb, .modal::-webkit-scrollbar-thumb, .rmui::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, .16);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+.vp-list::-webkit-scrollbar-thumb:hover, .bp-list::-webkit-scrollbar-thumb:hover,
+.lib-list::-webkit-scrollbar-thumb:hover, .modal::-webkit-scrollbar-thumb:hover, .rmui::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, .3); background-clip: content-box;
+}
+html[data-theme="dark"] .vp-list::-webkit-scrollbar-thumb,
+html[data-theme="dark"] .bp-list::-webkit-scrollbar-thumb,
+html[data-theme="dark"] .lib-list::-webkit-scrollbar-thumb,
+html[data-theme="dark"] .modal::-webkit-scrollbar-thumb,
+html[data-theme="dark"] .rmui::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, .22); background-clip: content-box;
 }
 
 /* ============================================================
