@@ -2258,7 +2258,10 @@ function toggleBoards(force) {
   const hidden = boardsPanel.classList.contains('hidden');
   const show = force === undefined ? hidden : force;
   boardsPanel.classList.toggle('hidden', !show);
-  if (show) renderBoardList();
+  if (show) {
+    $('#libMask').classList.remove('show');   // 同一个位置只留一个抽屉
+    renderBoardList();
+  }
 }
 $('#btnNewBoard').addEventListener('click', () => {
   const b = newBoard('场景 ' + (state.boards.length + 1));
@@ -2269,6 +2272,11 @@ $('#btnNewBoard').addEventListener('click', () => {
 });
 
 function renderBoardList() {
+  // 副标题说明「这些场景属于哪份画布」，和目录抽屉形成层级
+  const curWork = lib.items.find(x => x.id === lib.wid);
+  if ($('#bpSub')) $('#bpSub').textContent = curWork
+    ? '《' + curWork.name + '》 · ' + state.boards.length + ' 个场景'
+    : '';
   boardList.innerHTML = '';
   state.boards.forEach(b => {
     const card = document.createElement('div');
@@ -3809,6 +3817,9 @@ function fmtTime(t) {
 function renderLib() {
   const box = $('#libList');
   if (!box) return;
+  const curW = lib.items.find(x => x.id === lib.wid);
+  if ($('#libSub')) $('#libSub').textContent = '共 ' + lib.items.length + ' 份'
+    + (curW ? ' · 当前《' + curW.name + '》' : '');
   if (!lib.items.length) { box.innerHTML = '<div class="lib-empty">还没有画布 — 点下面「新建画布」</div>'; }
   else {
     box.innerHTML = lib.items.map(it => `
@@ -3816,8 +3827,8 @@ function renderLib() {
         <span class="lib-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><rect x="3" y="4.5" width="18" height="15" rx="3"/><path d="M7.5 9.5h9M7.5 13.5h5"/></svg></span>
         <span class="lib-main">
           <span class="lib-name">${escapeHtml(it.name || '未命名')}</span>
+          <span class="lib-time">${fmtTime(it.updatedAt)}</span>
         </span>
-        <span class="lib-time">${fmtTime(it.updatedAt)}</span>
         <span class="lib-acts">
           <button data-a="rename" title="改名" aria-label="改名">&#9998;</button>
           <button data-a="dup" title="复制一份" aria-label="复制">&#9147;</button>
@@ -3837,6 +3848,7 @@ $('#btnRemoteOpen').addEventListener('click', () => {
   window.open(url, '_blank');
 });
 async function openLibrary() {
+  toggleBoards(false);                 // 两个抽屉同一个位置，别叠在一起
   $('#libMask').classList.add('show');
   renderLib();
   await libPullIndex();
@@ -4187,10 +4199,7 @@ function boot() {
   lastSnapshot = snapshot();
   updateHistoryButtons();
   requestAnimationFrame(fpsLoop);
-  if (!localStorage.getItem('canvas.seen')) {
-    localStorage.setItem('canvas.seen', '1');
-    setTimeout(() => helpMask.classList.add('show'), 500);
-  }
+  /* 首次打开不再自动弹操作说明（弹窗高度不够，总是显示不全）—— 只在设置里手动打开 */
   window.addEventListener('resize', () => { applyCamera(); drawMinimap(); });
   window.addEventListener('beforeunload', () => { try { save(); } catch (e) { } });
 

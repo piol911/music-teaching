@@ -1910,3 +1910,95 @@ body.fps-on .fps-dot{ display:grid }
 @media (max-width:560px){
   .fps-dot{ width:26px; height:26px; font-size:9.5px }
 }
+
+/* ============================================================
+   2026-11-08 观感修正
+   ============================================================ */
+
+/* 帧率：只描边，不铺色块（实心太扎眼） */
+.fps-dot{
+  background:transparent !important;
+  border:1.5px solid currentColor;
+  color:#2ea44f;
+  font-weight:700;
+}
+.fps-dot.warn{ color:#c08a1e }
+.fps-dot.bad{ color:#cf222e }
+
+/* 小地图：放大到能看清，并紧贴工作条右上角（不再悬在中间） */
+.minimap{
+  width:220px; height:150px;
+  right:12px; bottom:calc(22px + 58px + 8px + var(--sab));
+  border-radius:14px;
+  box-shadow:0 10px 26px rgba(0,0,0,.12);
+}
+
+/* 目录：改成和「场景」同款的右下抽屉，位置/尺寸/圆角一致 */
+#libMask{ display:block; place-items:unset; background:rgba(0,0,0,.18) }
+#libMask .modal{
+  position:absolute; left:auto; top:auto;
+  right:10px; bottom:calc(142px + var(--sab));
+  width:300px; max-width:calc(100vw - 20px);
+  max-height:min(64vh, 540px);
+  margin:0; padding:0;
+  display:flex; flex-direction:column; overflow:hidden;
+  border-radius:var(--r-lg);
+  transform:translateX(14px) scale(.96);
+  transform-origin:100% 100%;
+  opacity:0;
+}
+.modal-mask.show #libMask .modal,
+#libMask.show .modal{ transform:none; opacity:1 }
+#libMask .modal > h3{
+  margin:0; padding:13px 14px 9px;
+  font-size:13px; font-weight:700; letter-spacing:.3px;
+  color:var(--text-2); border-bottom:1px solid var(--stroke);
+}
+#libMask .modal-sub{ display:none }
+#libMask .lib-list{
+  flex:1 1 auto; min-height:0; max-height:none;
+  margin:0; padding:8px; overflow-y:auto;
+}
+#libMask .lib-sync{ padding:6px 12px 2px; margin:0 }
+#libMask .modal-actions{
+  margin:0; padding:10px 10px 4px;
+  border-top:1px solid var(--stroke);
+  display:flex; gap:8px; justify-content:flex-end;
+}
+#libMask .lib-row{ border:1.5px solid transparent }
+#libMask .lib-row.cur{ background:var(--accent-soft); border-color:rgba(0,113,227,.4) }
+#libMask .lib-row:hover{ background:rgba(0,0,0,.04) }
+html[data-theme="dark"] #libMask .lib-row:hover{ background:rgba(255,255,255,.07) }
+
+@media (max-width:560px){
+  #libMask .modal{
+    left:10px; right:10px; width:auto;
+    bottom:calc(14px + 58px + 10px + var(--sab));
+    max-height:60vh;
+  }
+  .minimap{ width:180px; height:124px }
+}
+
+/* 目录抽屉里的行：名字一行、时间一行；操作按钮浮在右侧，别把名字挤没 */
+#libMask .lib-main{ display:flex; flex-direction:column; gap:2px; min-width:0 }
+#libMask .lib-name{ font-size:13.5px }
+#libMask .lib-time{
+  align-self:flex-start; margin:0; text-align:left;
+  font-size:11px; color:var(--text-3);
+}
+#libMask .lib-row{ position:relative; padding-right:8px }
+#libMask .lib-acts{
+  position:absolute; right:6px; top:50%; transform:translateY(-50%);
+  background:var(--surface-opaque); border-radius:8px; padding:2px;
+  box-shadow:0 2px 8px rgba(0,0,0,.12);
+}
+
+/* 两个抽屉的标题都带一句「你在哪一层」的副标题，层级才连得上 */
+.bp-head .bp-sub,
+#libMask .lib-sub{
+  display:block; margin-top:3px;
+  font-size:11px; font-weight:500; letter-spacing:0;
+  color:var(--text-3); white-space:nowrap;
+  overflow:hidden; text-overflow:ellipsis; max-width:190px;
+}
+#libMask .lib-list{ flex:0 1 auto }

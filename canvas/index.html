@@ -8,7 +8,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>Canvas · 无边画布</title>
-<link rel="stylesheet" href="styles.css?v=1794064202">
+<link rel="stylesheet" href="styles.css?v=1794074038">
 </head>
 <body>
 
@@ -210,7 +210,7 @@
 <!-- ============ 场景抽屉 ============ -->
 <aside class="boards-panel glass hidden" id="boardsPanel">
   <div class="bp-head">
-    <span>场景</span>
+    <span>场景<b class="bp-sub" id="bpSub"></b></span>
     <button class="btn icon sm" id="btnNewBoard" title="新建场景">
       <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
     </button>
@@ -290,7 +290,7 @@
 <!-- ============ 画布目录（多份作品 + 云同步状态） ============ -->
 <div class="modal-mask" id="libMask">
   <div class="modal glass wide">
-    <h3>画布目录</h3>
+    <h3>画布目录<b class="lib-sub" id="libSub"></b></h3>
     <p class="modal-sub">每份画布各存各的，内容都自动同步到云端，<b>不用再记任何码</b>。<br>换一台设备打开这里，看到的还是同一份目录。</p>
     <div class="lib-list" id="libList"></div>
     <div class="lib-sync" id="libSync">—</div>
@@ -319,6 +319,6 @@
 
 <input type="file" id="fileInput" accept="image/*" multiple hidden>
 
-<script src="app.js?v=1794064202"></script>
+<script src="app.js?v=1794074038"></script>
 </body>
 </html>
