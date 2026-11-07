@@ -1651,32 +1651,21 @@ html[data-theme="dark"] .nav-dock button:hover { background: rgba(255, 255, 255,
   display:inline-flex;flex-direction:column;align-items:flex-start;justify-content:center;
   flex:none;padding:1px 2px;margin-right:10px;
   text-decoration:none;color:var(--text);
-  transform:rotate(-4deg);
+  transform:rotate(-2.5deg);
   transition:opacity .2s var(--ease-out),transform .25s var(--ease-spring);
 }
-/* 字母大小/角度各不相同，才像写出来的；整体再斜一点 */
-.home-logo .hl-word{display:inline-flex;align-items:baseline;line-height:1;transform:skewX(-4deg)}
-.home-logo .hl-x,.home-logo .hl-y{
+.home-logo .hl-text{
   font-family:'XYHand',"Xingkai SC","Kaiti SC",cursive;
-  font-weight:700;font-style:normal;white-space:nowrap;
+  font-size:21px;line-height:1;letter-spacing:.01em;white-space:nowrap;
 }
-.home-logo .hl-x{display:inline-block;font-size:27px;transform:rotate(-9deg) translateY(1px)}
-.home-logo .hl-y{display:inline-block;font-size:29px;margin-left:-2px;transform:rotate(6deg) translateY(-2px)}
-.home-logo .hl-num{
-  display:inline-block;
-  font-family:'XYHand',"Xingkai SC","Kaiti SC",cursive;
-  font-weight:700;font-style:normal;
-  font-size:15px;letter-spacing:.04em;opacity:.72;
-  margin-left:4px;transform:translateY(-10px) rotate(-5deg);
-}
-.home-logo .hl-swash{width:100%;height:7px;margin-top:-2px;overflow:visible}
-.home-logo .hl-swash path{fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;opacity:.42}
-.home-logo:hover{opacity:.72;transform:rotate(-4deg) translateY(-1px)}
-.home-logo:active{transform:rotate(-4deg) scale(.96)}
+/* 线只压在 XY 下面一小截（约六成宽），不要拉满整串字 */
+.home-logo .hl-line{width:62%;height:5px;margin-top:1px;overflow:visible}
+.home-logo .hl-line path{fill:none;stroke:currentColor;stroke-width:1.2;stroke-linecap:round;opacity:.38}
+.home-logo:hover{opacity:.72;transform:rotate(-2.5deg) translateY(-1px)}
+.home-logo:active{transform:rotate(-2.5deg) scale(.96)}
 @media (max-width:560px){
-  .home-logo .hl-x{font-size:23px}
-  .home-logo .hl-y{font-size:25px}
-  .home-logo .hl-num{font-size:13px;transform:translateY(-9px) rotate(-5deg)}
+  .home-logo .hl-text{font-size:18px}
+  .home-logo .hl-line{width:60%}
   .home-logo{margin-right:7px}
 }
 
