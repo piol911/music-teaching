@@ -2599,6 +2599,50 @@ $('#btnMiniFold').addEventListener('click', e => {
   setMiniFold(!minimap.classList.contains('folded'));
 });
 
+/* ---------------- 底部工作条：「更多」上拉菜单 ----------------
+   窄屏时 CSS 按 data-pri 把次要工具收起来，这里把它们列进菜单。 */
+(() => {
+  const PRI = { select: 1, note: 1, text: 1, pan: 2, image: 2, shape: 2, video: 3, link: 3, ink: 3, crop: 3, erase: 3 };
+  document.querySelectorAll('#toolbar .tool[data-tool]').forEach(b => {
+    b.dataset.pri = PRI[b.dataset.tool] || 3;
+  });
+  const pop = $('#morePop'), btn = $('#btnMoreTools');
+  if (!pop || !btn) return;
+  const shown = b => !!(b.offsetWidth || b.offsetHeight || b.getClientRects().length);
+  function close() { pop.classList.remove('show'); btn.classList.remove('on'); }
+  function open() {
+    const hidden = [...document.querySelectorAll('#toolbar .tool[data-tool]')].filter(b => !shown(b));
+    if (!hidden.length) { showToast('工具都放得下，不用展开'); return; }
+    pop.innerHTML = hidden.map(b => {
+      const label = (b.getAttribute('title') || b.dataset.tool).replace(/\s*[（(][^）)]*[)）]\s*/g, '');
+      return `<button data-tool="${b.dataset.tool}" class="${b.classList.contains('active') ? 'on' : ''}">${b.innerHTML}<span>${label}</span></button>`;
+    }).join('');
+    pop.classList.add('show');
+    btn.classList.add('on');
+    const r = btn.getBoundingClientRect();
+    const w = pop.offsetWidth, h = pop.offsetHeight;
+    pop.style.left = clamp(r.left + r.width / 2 - w / 2, 8, Math.max(8, innerWidth - w - 8)) + 'px';
+    pop.style.top = Math.max(8, r.top - h - 10) + 'px';
+  }
+  btn.addEventListener('click', e => {
+    e.stopPropagation();
+    pop.classList.contains('show') ? close() : open();
+  });
+  pop.addEventListener('click', e => {
+    const b = e.target.closest('button[data-tool]');
+    if (!b) return;
+    const src = document.querySelector(`#toolbar .tool[data-tool="${b.dataset.tool}"]`);
+    close();
+    if (src) src.click();          // 复用原来的工具逻辑，不重复实现
+  });
+  document.addEventListener('pointerdown', e => {
+    if (!pop.classList.contains('show')) return;
+    if (pop.contains(e.target) || e.target.closest('#btnMoreTools')) return;
+    close();
+  });
+  window.addEventListener('resize', close);
+})();
+
 /* ---------------- 设置：右上角齿轮 ----------------
    把原来散在顶栏 / 视图面板 / 场景面板里的开关都收拢到这儿。 */
 const setMenu = $('#setMenu');

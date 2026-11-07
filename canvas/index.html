@@ -8,7 +8,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>Canvas · 无边画布</title>
-<link rel="stylesheet" href="styles.css?v=1794059740">
+<link rel="stylesheet" href="styles.css?v=1794060105">
 </head>
 <body>
 
@@ -93,6 +93,27 @@
 </button>
 
 <!-- ============ 视图 Dock：默认收在左下角，只留翻页键 ============ -->
+
+<!-- 展开后才是完整的视图列表（管理用） -->
+<div class="views-panel glass" id="viewsPanel">
+  <div class="vp-head">
+    <span>视图</span>
+    <button class="vp-fit" id="btnViewFit" title="让不同比例的屏幕看到同一片内容">跨屏适配：开</button>
+    <button class="vp-fit" id="btnRegions" title="在画布上标出每个视图已保存的区域，方便定位">区域：关</button>
+    <button class="btn icon sm" id="btnCloseViews" title="收起列表">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+    </button>
+  </div>
+  <div class="vp-list" id="viewsList"></div>
+</div>
+
+<!-- 拖动时的对齐参考线 -->
+<div class="guides" id="guides"><div class="gv" id="gv"></div><div class="gh" id="gh"></div></div>
+
+<!-- ============ 底部工具栏 ============ -->
+
+<!-- ============ 底部工作条：视图 + 工具 + 更多 + 场景目录（一条） ============ -->
+<div class="dock-bar glass" id="dockBar">
 <div class="views-dock glass" id="viewsDock">
   <button class="vd-nav" id="btnPrevView" title="上一个视图 (←)">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 6l-6 6 6 6"/></svg>
@@ -112,24 +133,7 @@
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
   </button>
 </div>
-
-<!-- 展开后才是完整的视图列表（管理用） -->
-<div class="views-panel glass" id="viewsPanel">
-  <div class="vp-head">
-    <span>视图</span>
-    <button class="vp-fit" id="btnViewFit" title="让不同比例的屏幕看到同一片内容">跨屏适配：开</button>
-    <button class="vp-fit" id="btnRegions" title="在画布上标出每个视图已保存的区域，方便定位">区域：关</button>
-    <button class="btn icon sm" id="btnCloseViews" title="收起列表">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
-    </button>
-  </div>
-  <div class="vp-list" id="viewsList"></div>
-</div>
-
-<!-- 拖动时的对齐参考线 -->
-<div class="guides" id="guides"><div class="gv" id="gv"></div><div class="gh" id="gh"></div></div>
-
-<!-- ============ 底部工具栏 ============ -->
+  <span class="dock-sep"></span>
 <div class="toolbar glass" id="toolbar">
   <button class="tool active" data-tool="select" title="选择 (V)">
     <svg viewBox="0 0 24 24"><path d="M5 3l14 8-6 1.5L10 19z"/></svg>
@@ -167,6 +171,21 @@
     <svg viewBox="0 0 24 24"><path d="M8 20H5l-2-2 10-10 7 7-5 5z"/><path d="M9 11l7 7"/></svg>
   </button>
 </div>
+  <span class="dock-sep"></span>
+  <button class="dock-more" id="btnMoreTools" title="更多工具">
+    <svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><circle cx="5.2" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="18.8" cy="12" r="1.7"/></svg>
+  </button>
+  <span class="dock-sep"></span>
+<button class="dock-nav" id="btnNavBoards" title="场景 (⌘⇧B)">
+    <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></svg>
+  </button>
+<button class="dock-nav" id="btnNavLib" title="目录 · 所有画布（云同步）">
+    <svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+  </button>
+</div>
+
+<!-- 更多工具：向上展开 -->
+<div class="more-pop glass" id="morePop"></div>
 
 <!-- ============ 形状 / 裁切 弹层 ============ -->
 <div class="popover" id="shapePop">
@@ -215,15 +234,6 @@
 </div>
 
 <!-- ============ 底部右侧入口：场景 / 目录（全端统一，样式对齐左下视图 Dock） ============ -->
-<div class="nav-dock glass" id="navDock">
-  <button id="btnNavBoards" title="场景 (⌘⇧B)">
-    <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></svg>
-  </button>
-  <span class="nd-div"></span>
-  <button id="btnNavLib" title="目录 · 所有画布（云同步）">
-    <svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
-  </button>
-</div>
 
 <!-- ============ 选中浮动工具条 ============ -->
 <div class="ctxbar glass" id="ctxbar"></div>
@@ -306,6 +316,6 @@
 
 <input type="file" id="fileInput" accept="image/*" multiple hidden>
 
-<script src="app.js?v=1794059740"></script>
+<script src="app.js?v=1794060105"></script>
 </body>
 </html>

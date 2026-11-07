@@ -1686,3 +1686,90 @@ html[data-theme="dark"] .nav-dock button:hover { background: rgba(255, 255, 255,
   scrollbar-width: none;
 }
 .toolbar::-webkit-scrollbar { display: none; }
+
+/* ============================================================
+   底部：合并成「一条」工作条
+   [视图] | [工具…] | [更多] | [场景 目录]
+   窄屏时次要工具自动收起，进「更多」上拉菜单
+   ============================================================ */
+.dock-bar{
+  position:fixed; left:50%; bottom:calc(22px + var(--sab));
+  transform:translateX(-50%);
+  display:flex; align-items:center; gap:2px;
+  padding:6px 8px; border-radius:999px;
+  max-width:calc(100vw - 12px);
+  overflow-x:auto; scrollbar-width:none;
+  z-index:60;
+  transition:transform .42s var(--ease-ios), opacity .3s var(--ease-ios);
+}
+.dock-bar::-webkit-scrollbar{ display:none }
+.dock-bar > *{ flex:none }
+.dock-sep{ width:1px; height:22px; background:var(--stroke-strong); margin:0 3px; flex:none }
+
+/* 内部三块不再是独立浮层 */
+.dock-bar .views-dock,
+.dock-bar .toolbar{
+  position:static; left:auto; right:auto; bottom:auto; top:auto;
+  transform:none !important;
+  background:none !important; border:0 !important; box-shadow:none !important;
+  -webkit-backdrop-filter:none !important; backdrop-filter:none !important;
+  padding:0; height:auto; width:auto; max-width:none;
+  overflow:visible;
+}
+.dock-bar .views-dock{ gap:1px }
+.dock-bar .toolbar{ gap:2px }
+
+/* 工具优先级：1 常驻，2 中等宽度收，3 窄屏就收 */
+@media (max-width:1160px){ #toolbar .tool[data-pri="3"]{ display:none } }
+@media (max-width:940px){  #toolbar .tool[data-pri="2"]{ display:none } }
+
+.dock-more,.dock-nav{
+  width:38px; height:38px; border:0; background:none; color:var(--text);
+  display:grid; place-items:center; border-radius:999px; cursor:pointer;
+  transition:background .18s, transform .15s var(--ease-spring);
+}
+.dock-more svg{ width:18px; height:18px; fill:currentColor }
+.dock-nav svg{ width:19px; height:19px; fill:none; stroke:currentColor; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round }
+.dock-more:hover,.dock-nav:hover{ background:rgba(0,0,0,.06) }
+html[data-theme="dark"] .dock-more:hover, html[data-theme="dark"] .dock-nav:hover{ background:rgba(255,255,255,.1) }
+.dock-more:active,.dock-nav:active{ transform:scale(.92) }
+.dock-more.on{ background:var(--accent); color:#fff }
+
+/* 上拉菜单 */
+.more-pop{
+  position:fixed; z-index:70; display:none;
+  grid-template-columns:1fr 1fr; gap:4px;
+  width:236px; padding:8px;
+  border-radius:16px;
+  transform-origin:50% 100%;
+}
+.more-pop.show{ display:grid; animation:popUp .22s var(--ease-spring) both }
+@keyframes popUp{ from{ opacity:0; transform:translateY(8px) scale(.96) } to{ opacity:1; transform:none } }
+.more-pop button{
+  display:flex; align-items:center; gap:8px;
+  border:0; background:none; color:var(--text);
+  padding:9px 8px; border-radius:10px; cursor:pointer;
+  font:inherit; font-size:12px; text-align:left;
+  transition:background .16s;
+}
+.more-pop button:hover{ background:rgba(0,0,0,.06) }
+html[data-theme="dark"] .more-pop button:hover{ background:rgba(255,255,255,.09) }
+.more-pop button.on{ background:var(--accent-soft); color:var(--accent) }
+.more-pop button svg{ width:17px; height:17px; flex:none }
+
+/* 沉浸 / 演示：只留「视图 + 退出」，其余收进不显示 */
+body.immersive #toolbar, body.immersive #dockBar .dock-more,
+body.immersive #dockBar .dock-nav,
+body.presenting #toolbar, body.presenting #dockBar .dock-more,
+body.presenting #dockBar .dock-nav{ display:none !important }
+body.immersive .dock-sep, body.presenting .dock-sep{ display:none !important }
+
+/* 收起菜单栏 / 遥控页：整条收起来 */
+body.menus-off .dock-bar{ transform:translate(-50%, 130px); opacity:0; pointer-events:none }
+body.rm .dock-bar{ display:none }
+
+@media (max-width:780px){
+  .dock-bar{ padding:5px 6px; gap:1px; bottom:calc(14px + var(--sab)) }
+  .dock-sep{ margin:0 2px; height:20px }
+  .dock-more,.dock-nav{ width:36px; height:36px }
+}
