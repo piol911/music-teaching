@@ -2606,17 +2606,33 @@ $('#btnMiniFold').addEventListener('click', e => {
   document.querySelectorAll('#toolbar .tool[data-tool]').forEach(b => {
     b.dataset.pri = PRI[b.dataset.tool] || 3;
   });
+  /* 小地图开关也放进工作条，别再单挂一个按钮 */
+  const mapBtn = $('#btnMapToggle');
+  if (mapBtn) {
+    mapBtn.addEventListener('click', () => setMiniFold(!minimap.classList.contains('folded')));
+  }
   const pop = $('#morePop'), btn = $('#btnMoreTools');
   if (!pop || !btn) return;
   const shown = b => !!(b.offsetWidth || b.offsetHeight || b.getClientRects().length);
   function close() { pop.classList.remove('show'); btn.classList.remove('on'); }
   function open() {
-    const hidden = [...document.querySelectorAll('#toolbar .tool[data-tool]')].filter(b => !shown(b));
-    if (!hidden.length) { showToast('工具都放得下，不用展开'); return; }
-    pop.innerHTML = hidden.map(b => {
-      const label = (b.getAttribute('title') || b.dataset.tool).replace(/\s*[（(][^）)]*[)）]\s*/g, '');
-      return `<button data-tool="${b.dataset.tool}" class="${b.classList.contains('active') ? 'on' : ''}">${b.innerHTML}<span>${label}</span></button>`;
-    }).join('');
+    const items = [...document.querySelectorAll('#toolbar .tool[data-tool]')]
+      .filter(b => !shown(b))
+      .map(b => ({
+        sel: `#toolbar .tool[data-tool="${b.dataset.tool}"]`,
+        label: (b.getAttribute('title') || b.dataset.tool).replace(/\s*[（(][^）)]*[)）]\s*/g, ''),
+        icon: b.innerHTML,
+        on: b.classList.contains('active'),
+      }));
+    /* 手机上的「记录视图 / 演示」也会被收起，一并放进菜单 */
+    [['#btnAddView', '记录视图'], ['#btnPlay', '演示']].forEach(([sel, label]) => {
+      const el = $(sel);
+      if (el && !shown(el)) items.push({ sel, label, icon: el.innerHTML, on: false });
+    });
+    if (!items.length) { showToast('工具都放得下，不用展开'); return; }
+    pop.innerHTML = items.map(it =>
+      `<button data-src="${it.sel}" class="${it.on ? 'on' : ''}">${it.icon}<span>${it.label}</span></button>`
+    ).join('');
     pop.classList.add('show');
     btn.classList.add('on');
     const r = btn.getBoundingClientRect();
@@ -2629,11 +2645,11 @@ $('#btnMiniFold').addEventListener('click', e => {
     pop.classList.contains('show') ? close() : open();
   });
   pop.addEventListener('click', e => {
-    const b = e.target.closest('button[data-tool]');
+    const b = e.target.closest('button[data-src]');
     if (!b) return;
-    const src = document.querySelector(`#toolbar .tool[data-tool="${b.dataset.tool}"]`);
+    const src = document.querySelector(b.dataset.src);
     close();
-    if (src) src.click();          // 复用原来的工具逻辑，不重复实现
+    if (src) src.click();          // 复用原来的逻辑，不重复实现
   });
   document.addEventListener('pointerdown', e => {
     if (!pop.classList.contains('show')) return;

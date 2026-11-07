@@ -1773,3 +1773,60 @@ body.rm .dock-bar{ display:none }
   .dock-sep{ margin:0 2px; height:20px }
   .dock-more,.dock-nav{ width:36px; height:36px }
 }
+
+/* ============================================================
+   顶栏重排：左边「标识 + 标题」，中间缩放组真正居中，右边设置
+   （以前两个 spacer 各吃一半空白，缩放组被挤得偏右，看着像错位）
+   ============================================================ */
+.topbar .spacer{ display:none }
+.topbar .board-title-wrap{ flex:1 1 auto; min-width:0; margin-left:6px }
+.topbar .board-name{ width:100%; max-width:clamp(200px, 27vw, 420px) }
+.topbar .zoom-pill{
+  position:absolute; left:50%; transform:translateX(-50%);
+  margin:0;
+}
+@media (max-width: 900px){
+  /* 窄屏放不下居中，就让它回到流里，自然靠右 */
+  .topbar .zoom-pill{ position:static; transform:none; margin-left:auto }
+}
+
+/* 小地图：抬到工作条上方，不再压住按钮；开关收进工作条 */
+.minimap{ right:14px; bottom:calc(92px + var(--sab)) }
+.minimap.folded{ display:none }
+.mini-fold{ display:none !important }
+#fpsMeter{ bottom: calc(150px + var(--sab)) }
+
+/* 小地图按钮的图标是线稿，别被 .dock-more svg 的 fill 规则填成黑块 */
+#btnMapToggle svg{ fill:none !important; stroke:currentColor; stroke-width:1.8 }
+
+/* 手机：顶栏别再溢出（标题可压缩，缩放组只留「百分比 + 撤销重做」） */
+@media (max-width: 640px){
+  .topbar{ gap:6px; padding:0 8px }
+  .topbar .board-name{ max-width:100%; min-width:0; font-size:15px }
+  .topbar .home-logo .hl-text{ font-size:17px }
+  .topbar .home-logo{ margin-right:2px }
+  .topbar .zoom-pill{ gap:0 }
+  .topbar .zoom-pill .divider,
+  #btnFit{ display:none }
+}
+/* 超窄屏：工具只留「选择 / 便签」，文本等进「更多」 */
+@media (max-width: 430px){
+  #toolbar .tool[data-pri="1"]:not([data-tool="select"]):not([data-tool="note"]){ display:none }
+  .dock-bar{ padding:4px 5px }
+  .dock-more, .dock-nav{ width:34px; height:34px }
+}
+/* 手机上小地图本来就是隐藏的，开关按钮也没意义，收掉给工具腾地方 */
+@media (max-width: 720px){
+  #btnMapToggle{ display:none }
+}
+
+/* 手机：记录视图 / 演示 也收进「更多」，否则一条放不下 */
+@media (max-width: 560px){
+  .dock-bar .vd-add, .dock-bar .vd-play{ display:none }
+}
+
+/* 退出✕不该常驻：.views-dock button 的 display:grid 比 .vd-exit 的 display:none 优先级高，
+   结果正常模式下也露出来（挤占一个位置）。这里显式压回去。 */
+.dock-bar .vd-exit{ display:none !important }
+body.presenting .dock-bar .vd-exit,
+body.immersive .dock-bar .vd-exit{ display:grid !important }
