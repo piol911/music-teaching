@@ -55,7 +55,7 @@ const MIN_SCALE = 0.08, MAX_SCALE = 5;
 const STORE_PREFIX = 'canvas.freeform.v1.';
 /* tomb：删掉的画布 id（墓碑）。没有它的话，删掉的作品会被本机缓存
    在 libPullIndex 里当成「本机多出来的」又补回目录 —— 删了等于没删。 */
-const lib = { items: [], wid: null, ready: false, tomb: [] };   // 画布目录
+const lib = { items: [], wid: null, ready: false, tomb: [], cloudActive: null };   // 画布目录
 const storeKey = wid => STORE_PREFIX + (wid || lib.wid || 'default');
 const REMOTE = /[?&]remote=1/.test(location.search);   // ?remote=1 → 只当遥控器用，不加载画布
 
@@ -3418,7 +3418,10 @@ function libReadLocal() { try { const a = JSON.parse(localStorage.getItem(LIB_LO
 function libWriteTomb() { try { localStorage.setItem(LIB_TOMB, JSON.stringify(lib.tomb.slice(-300))); } catch (e) { /* 忽略 */ } }
 function libReadTomb() { try { const a = JSON.parse(localStorage.getItem(LIB_TOMB) || '[]'); return Array.isArray(a) ? a : []; } catch (e) { return []; } }
 /* 这份作品是不是「已经删掉了」（删除时间晚于它的最后更新时间） */
-const libDead = it => it && tombAt(lib.tomb, it.id) > (it.updatedAt || 0);
+/* ⚠️ 墓碑是**永久**的：作品 id 是随机串，不会重用。
+   之前写成「墓碑时间 > updatedAt 才算死」，结果设备只要打开过一次那份作品
+   （libTouch 会把 updatedAt 刷新到墓碑之后），它就又活过来了 —— 删了等于没删。 */
+const libDead = it => !!(it && tombAt(lib.tomb, it.id));
 
 const elCount = () => state.boards.reduce((s, b) => s + (b.elements ? b.elements.length : 0), 0);
 function flushSave() { clearTimeout(saveTimer); save(); }
@@ -3435,6 +3438,7 @@ async function libPullIndex() {
     const j = await cloudGet(LIB_INDEX_KEY);
     if (j && j.data && Array.isArray(j.data.items)) {
       lib.items = j.data.items;
+      lib.cloudActive = j.data.active || null;    // 云端记的「当前打开的是哪份」
       if (Array.isArray(j.data.tomb)) {
         lib.tomb = mergeTomb(lib.tomb, j.data.tomb);
         libWriteTomb();
@@ -3832,18 +3836,15 @@ async function libBoot() {
   libMigrateLocal();                       // 旧的本机内容别丢
   await libPullIndex();
   if (!lib.items.length) await libMigrateCloud();
-  const had = lib.items.length > 0;   // 旧空间码那份也搬过来
   await libEnsureBuiltin();                          // 保证《艺术 上》在目录里（幂等）
-  if (had) {
-    const want = lib.items.some(x => x.id === lib.wid) ? lib.wid : lib.items[0].id;
-    await libOpen(want, true);
-  } else {
-    await libCreate('画布 1');                       // 全新用户：空白画布为当前，《艺术 上》作第二件
-  }
   if (!lib.items.length) {
-    await libCreate('画布 1');
+    await libCreate('画布 1');                       // 全新用户：空白画布为当前
   } else {
-    const want = lib.items.some(x => x.id === lib.wid) ? lib.wid : lib.items[0].id;
+    /* 打开哪一份：本机上次打开过的 → 云端记的 active → 目录第一份。
+       ⚠️ 必须带云端的 active：否则新设备永远打开「目录第一份」（内置《艺术 上》），
+       而你手机停在另一份上 → 表现就是「新设备内容不一致、也不自动同步」。 */
+    const want = [lib.wid, lib.cloudActive].find(id => id && lib.items.some(x => x.id === id))
+      || lib.items[0].id;
     await libOpen(want, true);
   }
   lib.ready = true;

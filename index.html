@@ -787,6 +787,9 @@ async function pull() {
     const j = await r.json();
     lastPullAt = Date.now();
     if (j && j.data && Array.isArray(j.data.links)) {
+      /* 自愈：云端被清空了、本机还有 → 把本机这份补回去。
+         （之前首页在新设备上空白，就是云端 links 被写成 0 条导致的） */
+      if (!j.data.links.length && links.length) { push(); }
       // 合并而不是覆盖：本机加的和别处加的都要留着
       const m = mergeLinks(links, linkTomb, j.data.links, j.data.tomb);
       if (JSON.stringify(m.links.map(x => x.href)) !== JSON.stringify(links.map(x => x.href))) {
@@ -813,25 +816,27 @@ async function pullRetry(n = 3) {
   return false;
 }
 
-async function push() {
+async function push(force) {
   if (!code) return false;
   try {
-    /* 先读再写能避免旧页面盖新内容，但多一次往返；刚拉过就不必再读（既快又省请求） */
-    const fresh = Date.now() - (lastPullAt || 0) < 5000;
+    /* 一律「先读云端 → 合并 → 再写」。
+       原来有个「刚拉过 5 秒就直接写」的捷径：一旦某台设备还没拉到数据
+       （或者拉取失败），它就会把**空列表**整份盖上去 —— 首页就是这么被清空的。
+       force=true 只给「用户主动保存」用（允许把最后一条也删掉）。 */
     let toWrite = { v: 1, links, tomb: linkTomb, lock: lockCfg };
-    if (!fresh) {
-      try {
-        const cur = await fetch(CLOUD_API + '?key=' + encodeURIComponent(recKey()), { cache: 'no-store' });
-        const cj = await cur.json();
-        if (cj && cj.data && Array.isArray(cj.data.links)) {
-          const m = mergeLinks(links, linkTomb, cj.data.links, cj.data.tomb);
-          toWrite = { v: 1, links: m.links, tomb: m.tomb, lock: lockCfg };
-          if (JSON.stringify(m.links.map(x => x.href)) !== JSON.stringify(links.map(x => x.href))) {
-            links = m.links; linkTomb = m.tomb; saveTomb(); saveLocal(); render();
-          }
+    try {
+      const cur = await fetch(CLOUD_API + '?key=' + encodeURIComponent(recKey()), { cache: 'no-store' });
+      const cj = await cur.json();
+      if (cj && cj.data && Array.isArray(cj.data.links)) {
+        // 本机空、云端有内容、又不是用户主动保存 → 拒绝推空，别清空别人的数据
+        if (!force && !links.length && cj.data.links.length) return false;
+        const m = mergeLinks(links, linkTomb, cj.data.links, cj.data.tomb);
+        toWrite = { v: 1, links: m.links, tomb: m.tomb, lock: lockCfg };
+        if (JSON.stringify(m.links.map(x => x.href)) !== JSON.stringify(links.map(x => x.href))) {
+          links = m.links; linkTomb = m.tomb; saveTomb(); saveLocal(); render();
         }
-      } catch (e) { /* 读不到就照原样写 */ }
-    }
+      }
+    } catch (e) { /* 读不到就照原样写 */ }
     const r = await fetch(CLOUD_API, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -843,7 +848,7 @@ async function push() {
 }
 
 async function save(msg) {
-  const ok = await push();
+  const ok = await push(true);      // 用户主动保存：允许把最后一条也删掉
   const label = editing ? '编辑中' : '已同步';
   $('#state').textContent = label;
   $('#stateFoot').textContent = label;
