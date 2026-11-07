@@ -2614,6 +2614,14 @@ $('#btnMiniFold').addEventListener('click', e => {
   const pop = $('#morePop'), btn = $('#btnMoreTools');
   if (!pop || !btn) return;
   const shown = b => !!(b.offsetWidth || b.offsetHeight || b.getClientRects().length);
+  const hiddenCount = () =>
+    [...document.querySelectorAll('#toolbar .tool[data-tool]')].filter(b => !shown(b)).length
+    + ['#btnAddView', '#btnPlay'].filter(sel => { const el = $(sel); return el && !shown(el); }).length;
+  /* 没有任何东西被收起时，这个按钮就是多余的 —— 直接藏起来，别点开再说「不用展开」 */
+  function syncMore() {
+    btn.style.display = hiddenCount() ? '' : 'none';
+    if (!hiddenCount()) close();
+  }
   function close() { pop.classList.remove('show'); btn.classList.remove('on'); }
   function open() {
     const items = [...document.querySelectorAll('#toolbar .tool[data-tool]')]
@@ -2629,7 +2637,7 @@ $('#btnMiniFold').addEventListener('click', e => {
       const el = $(sel);
       if (el && !shown(el)) items.push({ sel, label, icon: el.innerHTML, on: false });
     });
-    if (!items.length) { showToast('工具都放得下，不用展开'); return; }
+    if (!items.length) { close(); return; }
     pop.innerHTML = items.map(it =>
       `<button data-src="${it.sel}" class="${it.on ? 'on' : ''}">${it.icon}<span>${it.label}</span></button>`
     ).join('');
@@ -2656,7 +2664,8 @@ $('#btnMiniFold').addEventListener('click', e => {
     if (pop.contains(e.target) || e.target.closest('#btnMoreTools')) return;
     close();
   });
-  window.addEventListener('resize', close);
+  window.addEventListener('resize', () => { close(); syncMore(); });
+  syncMore();
 })();
 
 /* ---------------- 设置：右上角齿轮 ----------------
@@ -4088,8 +4097,14 @@ function fpsLoop(now) {
     fpsAvg = fpsAvg * 0.35 + fps * 0.65;
     fpsFrames = 0; fpsAt = now;
     if (document.body.classList.contains('fps-on')) {
-      const m = $('#fpsMeter');
-      if (m) m.textContent = Math.round(fpsAvg) + ' FPS';
+      const m = $('#fpsDot');
+      if (m) {
+        const n = Math.round(fpsAvg);
+        m.textContent = n;
+        m.classList.toggle('warn', n < 50 && n >= 35);
+        m.classList.toggle('bad', n < 35);
+        m.title = '实时帧率 ' + n;
+      }
     }
     if (state.quality === 'auto' && !autoDegraded && fpsAvg < 38) {
       autoDegraded = true;

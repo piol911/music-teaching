@@ -1881,3 +1881,32 @@ body.immersive .dock-bar .vd-exit{ display:grid !important }
 @media (max-width: 560px){
   #toolbar .tb-div{ display:none }
 }
+
+/* ============================================================
+   「更多」菜单图标：默认是线稿（和工具条一致），
+   只有内联 fill="currentColor" 的（视频播放三角、演示三角）才填充
+   ============================================================ */
+.more-pop button svg{
+  width:22px; height:22px; flex:none;
+  fill:none; stroke:currentColor; stroke-width:1.7;
+  stroke-linecap:round; stroke-linejoin:round;
+}
+.more-pop button svg [fill="currentColor"]{ fill:currentColor; stroke:none }
+.more-pop button svg[fill="currentColor"]{ fill:currentColor; stroke:none }
+
+/* 帧率：顶栏里一个小圆点（数字在圈里），不再浮在页面中间 */
+.fps-dot{
+  display:none; flex:none;
+  width:30px; height:30px; border-radius:50%;
+  place-items:center;
+  font:700 10.5px/1 var(--mono); letter-spacing:-.02em;
+  color:#fff; background:#2ea44f;
+  transition:background .3s var(--ease-out);
+  cursor:default;
+}
+body.fps-on .fps-dot{ display:grid }
+.fps-dot.warn{ background:#d29922 }
+.fps-dot.bad{ background:#cf222e }
+@media (max-width:560px){
+  .fps-dot{ width:26px; height:26px; font-size:9.5px }
+}
