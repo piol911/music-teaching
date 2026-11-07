@@ -120,7 +120,8 @@ function markDirty() {
   // 这样两端同时改不同场景时，两边都能留下（不再整份覆盖）
   const b = board && state.activeId ? board() : null;
   if (b) { b.mt = Date.now(); if (b.__ph) delete b.__ph; }   // 一改就不再是空占位了
-  saveStateEl.textContent = '保存中…';
+  // ⚠️ 不要在这里改文案：连续编辑时「保存中…／已保存」来回跳，看着像在抽筋。
+  // 文字保持「已保存」不动，只在真的写盘时轻轻变淡一下（见 save()）。
   saveStateEl.classList.add('saving');
   clearTimeout(saveTimer);
   saveTimer = setTimeout(save, 500);
@@ -134,6 +135,7 @@ function save() {
   try { str = JSON.stringify(payload); } catch (e) { return; }
   try {
     localStorage.setItem(storeKey(), str);
+    saveStateEl.classList.remove('saving');
     saveStateEl.textContent = isOnline() ? '已保存' : '离线 · 已存本机';
   } catch (e) {
     // 超出配额：从最大的图片开始逐张剔除，能留几张留几张

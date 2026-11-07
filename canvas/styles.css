@@ -438,7 +438,9 @@ html[data-theme="dark"] .btn:hover { background: rgba(255, 255, 255, .10); }
   color: var(--text);
   padding: 2px 6px;
   border-radius: 6px;
-  width: 190px;
+  /* 跟着窗口长：窄屏 200 起，宽屏最多 460（原来写死 190，长标题必然被截） */
+  width: clamp(200px, 27vw, 460px);
+  min-width: 0;
   outline: none;
   transition: background .18s;
 }
@@ -486,7 +488,8 @@ html[data-theme="dark"] .zoom-val:hover { background: rgba(255, 255, 255, .1); }
   text-align: right;
   transition: color .3s;
 }
-.save-state.saving { color: var(--accent); }
+/* 保存中只是文字略微加深一点，不再跳成强调色（那样看着像报错） */
+.save-state.saving { color: var(--text-2); }
 
 /* 工具栏 */
 .toolbar {
@@ -1676,3 +1679,21 @@ html[data-theme="dark"] .nav-dock button:hover { background: rgba(255, 255, 255,
   .home-logo .hl-num{font-size:13px;transform:translateY(-9px) rotate(-5deg)}
   .home-logo{margin-right:7px}
 }
+
+/* ============================================================
+   中等宽度：两侧 Dock / 小地图抬到工具栏上方，
+   否则工具栏居中变宽后会压在它们身上（1100px 左右必翻车）
+   ============================================================ */
+@media (max-width: 1200px) {
+  .views-dock { bottom: calc(88px + var(--sab)); }
+  .nav-dock { bottom: calc(88px + var(--sab)); }
+  .minimap { bottom: calc(88px + var(--sab)); }
+  #fpsMeter { bottom: calc(158px + var(--sab)); }
+}
+/* 工具栏永远别超出屏幕；实在放不下就横向滚动，而不是压住别的按钮 */
+.toolbar {
+  max-width: calc(100vw - 24px);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.toolbar::-webkit-scrollbar { display: none; }
