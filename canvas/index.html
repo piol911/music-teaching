@@ -8,7 +8,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>Canvas · 无边画布</title>
-<link rel="stylesheet" href="styles.css?v=1794056944">
+<link rel="stylesheet" href="styles.css?v=1794059072">
 </head>
 <body>
 
@@ -24,6 +24,11 @@
 
 <!-- ============ 顶栏 ============ -->
 <header class="topbar glass">
+  <!-- 手写标识：点它回首页 -->
+  <a class="home-logo" href="../" title="返回主页" aria-label="XY6300 · 返回主页">
+    <span class="hl-text">XY6300</span>
+    <svg class="hl-line" viewBox="0 0 100 6" preserveAspectRatio="none" aria-hidden="true"><path d="M2 4.4C26 1.8 58 1.5 98 3.4"/></svg>
+  </a>
   <div class="board-title-wrap">
     <input id="boardName" class="board-name" value="未命名场景" spellcheck="false">
   </div>
@@ -301,6 +306,6 @@
 
 <input type="file" id="fileInput" accept="image/*" multiple hidden>
 
-<script src="app.js?v=1794056944"></script>
+<script src="app.js?v=1794059072"></script>
 </body>
 </html>

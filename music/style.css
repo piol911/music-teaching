@@ -2726,3 +2726,31 @@ body.admin-mode #dashboard-screen .stack-card .card-edit-dot:hover {
     border: 1px solid var(--border-bright);
     color: var(--text);
 }
+
+/* ============================================================
+   手写站标 XY6300（点它回首页）
+   字体：../assets/xy-hand.woff2（相对路径，兼容子目录部署）
+   ============================================================ */
+@font-face{
+    font-family:'XYHand';
+    src:url('../assets/xy-hand.woff2') format('woff2');
+    font-weight:700;font-style:normal;font-display:swap;
+}
+.home-logo{
+    display:inline-flex;flex-direction:column;align-items:stretch;
+    flex:none;padding:2px 3px;text-decoration:none;
+    color:var(--text-secondary);
+    transform:rotate(-2.5deg);
+    transition:opacity .2s ease,transform .25s cubic-bezier(.2,.8,.3,1.2),color .2s ease;
+}
+.home-logo .hl-text{
+    font-family:'XYHand',"Xingkai SC","Kaiti SC",cursive;
+    font-size:22px;line-height:1;letter-spacing:.01em;white-space:nowrap;
+}
+.home-logo .hl-line{width:100%;height:5px;margin-top:1px;overflow:visible}
+.home-logo .hl-line path{fill:none;stroke:currentColor;stroke-width:1.3;stroke-linecap:round;opacity:.45}
+.home-logo:hover{color:var(--accent);opacity:.85;transform:rotate(-2.5deg) translateY(-1px)}
+.home-logo:active{transform:rotate(-2.5deg) scale(.96)}
+@media (max-width:640px){
+    .home-logo .hl-text{font-size:18px}
+}
