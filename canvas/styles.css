@@ -1830,3 +1830,54 @@ body.rm .dock-bar{ display:none }
 .dock-bar .vd-exit{ display:none !important }
 body.presenting .dock-bar .vd-exit,
 body.immersive .dock-bar .vd-exit{ display:grid !important }
+
+/* ============================================================
+   手机：把工作条改成「大按钮」，只用一只手点得到的几个
+   [‹ 1/9 ›] | [选择] | [更多] | [场景 目录]
+   其余工具全部进「更多」（三列大图标）
+   ============================================================ */
+@media (max-width: 560px){
+  .dock-bar{
+    height:58px; padding:6px; gap:2px;
+    bottom:calc(14px + var(--sab));
+  }
+  .dock-bar .vd-nav{ width:46px; height:46px; border-radius:14px }
+  .dock-bar .vd-nav svg{ width:20px; height:20px }
+  .dock-bar .vd-count{ min-width:54px; height:46px; font-size:14px; border-radius:14px }
+  .dock-bar .tool{ width:46px; height:46px; border-radius:14px }
+  .dock-bar .tool svg{ width:22px; height:22px }
+  .dock-bar .dock-more,
+  .dock-bar .dock-nav{ width:46px; height:46px; border-radius:14px }
+  .dock-bar .dock-more svg,
+  .dock-bar .dock-nav svg{ width:21px; height:21px }
+  .dock-sep{ height:26px; margin:0 1px }
+
+  /* 手机上工具栏只留「选择」，其余全进更多 */
+  #toolbar .tool[data-tool]:not([data-tool="select"]){ display:none }
+
+  /* 更多：三列大图标，手指好点 */
+  .more-pop{
+    width:calc(100vw - 24px); max-width:340px;
+    grid-template-columns:repeat(3, 1fr);
+    gap:6px; padding:10px;
+    max-height:min(56vh, 380px); overflow-y:auto;
+  }
+  .more-pop button{
+    flex-direction:column; justify-content:center; gap:6px;
+    padding:12px 4px; border-radius:14px;
+    font-size:11.5px; text-align:center;
+  }
+  .more-pop button svg{ width:22px; height:22px }
+}
+
+/* 顶栏图标在手机上也放大一点，别抠抠搜搜 */
+@media (max-width: 560px){
+  .topbar{ height:56px }
+  .topbar .btn.icon{ width:38px; height:38px; border-radius:11px }
+  .topbar .btn.icon svg{ width:20px; height:20px }
+  .topbar .zoom-val{ min-width:46px; height:34px; font-size:13px }
+}
+/* 手机上工具被收进「更多」后，条内残留的分隔线也要收掉 */
+@media (max-width: 560px){
+  #toolbar .tb-div{ display:none }
+}
