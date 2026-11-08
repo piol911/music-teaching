@@ -1,0 +1,17 @@
+{
+  "name": "xy6300-office-preview",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "esbuild src/office-preview.js --bundle --minify --format=iife --global-name=XYOfficePreview --outfile=../office-preview.bundle.js"
+  },
+  "dependencies": {
+    "docx-preview": "0.4.1",
+    "mammoth": "1.13.0",
+    "turndown": "7.2.5",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2"
+  }
+}

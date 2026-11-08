@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#171613">
+  <meta http-equiv="Cache-Control" content="no-store">
+  <meta http-equiv="Pragma" content="no-cache">
+  <title>笔记界面 · 三版设计参考</title>
+  <link rel="stylesheet" href="prototypes.css?v=2">
+</head>
+<body>
+  <header class="review-bar">
+    <a class="back-link" href="../">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>
+      <span>返回笔记</span>
+    </a>
+    <div class="review-title">
+      <span>UI STUDY</span>
+      <strong>三种笔记界面</strong>
+    </div>
+    <div class="variant-tabs" role="tablist" aria-label="界面方案">
+      <button type="button" class="variant-tab active" id="tab-paper" data-target="paper" role="tab" aria-selected="true" aria-controls="proto-paper" tabindex="0">
+        <span>01</span> 纸页
+      </button>
+      <button type="button" class="variant-tab" id="tab-desk" data-target="desk" role="tab" aria-selected="false" aria-controls="proto-desk" tabindex="-1">
+        <span>02</span> 书桌
+      </button>
+      <button type="button" class="variant-tab" id="tab-archive" data-target="archive" role="tab" aria-selected="false" aria-controls="proto-archive" tabindex="-1">
+        <span>03</span> 档案
+      </button>
+    </div>
+    <button class="replay-btn" id="replayBtn" type="button">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 8a8 8 0 10.6 7M19 3v5h-5"/></svg>
+      <span>重播动效</span>
+    </button>
+  </header>
+
+  <main class="stage">
+    <section class="variant-panel paper-panel active" id="proto-paper" data-variant="paper" role="tabpanel" aria-labelledby="tab-paper">
+      <div class="paper-app">
+        <aside class="paper-index">
+          <div class="paper-brand">
+            <span class="hand-mark">XY6300</span>
+            <span>私人札记</span>
+          </div>
+          <div class="paper-issue">
+            <span>NOV. 08</span>
+            <span>VOL. 03</span>
+          </div>
+          <div class="paper-section-label">册页</div>
+          <button class="paper-folder active" type="button"><span>全部札记</span><b>08</b></button>
+          <button class="paper-folder" type="button"><span>日常</span><b>05</b></button>
+          <button class="paper-folder" type="button"><span>工作</span><b>02</b></button>
+          <button class="paper-folder" type="button"><span>未归档</span><b>01</b></button>
+          <div class="paper-section-label notes-label">目录</div>
+          <ol class="paper-note-list" id="paperList"></ol>
+          <button class="paper-new" type="button"><span>＋</span> 新建札记</button>
+        </aside>
+
+        <section class="paper-page">
+          <header class="paper-page-head">
+            <span class="folio" id="paperFolio">FOLIO 01</span>
+            <div class="paper-actions">
+              <button type="button" aria-label="收藏当前札记" title="收藏">
+                <svg viewBox="0 0 24 24"><path d="M7 4h10v16l-5-3.5L7 20z"/></svg>
+              </button>
+              <button type="button" aria-label="札记菜单" title="更多">
+                <svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg>
+              </button>
+            </div>
+          </header>
+          <article class="paper-article">
+            <div class="paper-kicker" id="paperKicker">日常 / 午后</div>
+            <h1 id="paperTitle">雨停以后</h1>
+            <div class="paper-meta">
+              <span id="paperDate">2026.11.08</span>
+              <span class="paper-meta-line"></span>
+              <span id="paperTags">#日常 #写作</span>
+            </div>
+            <div class="paper-body" id="paperBody"></div>
+          </article>
+          <footer class="paper-page-foot">
+            <span>PRIVATE NOTEBOOK</span>
+            <span>— <b id="paperCount">01</b> —</span>
+          </footer>
+        </section>
+      </div>
+    </section>
+
+    <section class="variant-panel desk-panel" id="proto-desk" data-variant="desk" role="tabpanel" aria-labelledby="tab-desk" hidden>
+      <div class="desk-app">
+        <header class="desk-top">
+          <div class="desk-brand">
+            <span class="hand-mark">XY6300</span>
+            <span>写作工作台</span>
+          </div>
+          <div class="desk-status"><i></i> 本地已保存 <span>12:46</span></div>
+          <button class="desk-add" type="button" aria-label="新建笔记">
+            <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+          </button>
+        </header>
+
+        <div class="desk-body">
+          <aside class="desk-folders">
+            <span class="desk-label">抽屉</span>
+            <button class="desk-folder active" type="button"><b>所有笔记</b><span>08</span></button>
+            <button class="desk-folder" type="button"><b>日常记录</b><span>05</span></button>
+            <button class="desk-folder" type="button"><b>工作现场</b><span>02</span></button>
+            <button class="desk-folder" type="button"><b>暂存</b><span>01</span></button>
+            <div class="desk-folder-spacer"></div>
+            <button class="desk-utility" type="button">导入手稿</button>
+            <button class="desk-utility" type="button">导出纸张</button>
+          </aside>
+
+          <section class="desk-stack">
+            <div class="desk-stack-head">
+              <span>纸片</span>
+              <span>按修改时间</span>
+            </div>
+            <div class="desk-card-list" id="deskList"></div>
+          </section>
+
+          <article class="desk-sheet">
+            <div class="desk-sheet-tab">正在书写</div>
+            <header>
+              <span id="deskKicker">日常 / NOTE 01</span>
+              <span id="deskDate">11.08</span>
+            </header>
+            <h1 id="deskTitle">雨停以后</h1>
+            <div class="desk-tags" id="deskTags"></div>
+            <div class="desk-prose" id="deskBody"></div>
+            <footer>
+              <span>70 字</span>
+              <span>PRIVATE DESK · XY6300</span>
+            </footer>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="variant-panel archive-panel" id="proto-archive" data-variant="archive" role="tabpanel" aria-labelledby="tab-archive" hidden>
+      <div class="archive-app">
+        <header class="archive-top">
+          <div class="archive-mark"><span>XY</span>6300</div>
+          <div class="archive-heading">PRIVATE<br>NOTE ARCHIVE</div>
+          <div class="archive-top-meta">
+            <span>INDEX 08</span>
+            <span>REV. 2026.11</span>
+          </div>
+          <button class="archive-new" type="button">NEW ENTRY <span>+</span></button>
+        </header>
+
+        <div class="archive-body">
+          <aside class="archive-rail" aria-hidden="true">
+            <span>01</span><span>02</span><span>03</span><span>04</span>
+            <b>INDEX</b>
+          </aside>
+
+          <section class="archive-index-panel">
+            <div class="archive-search">
+              <span>SEARCH</span>
+              <input type="search" value="" placeholder="检索标题或正文" aria-label="检索笔记">
+            </div>
+            <div class="archive-table-head">
+              <span>NO.</span><span>ENTRY</span><span>DATE</span>
+            </div>
+            <div class="archive-list" id="archiveList"></div>
+          </section>
+
+          <article class="archive-document">
+            <div class="archive-doc-number" id="archiveNumber">01</div>
+            <header>
+              <span id="archiveKicker">日常记录 / PERSONAL</span>
+              <span id="archiveDate">2026.11.08</span>
+            </header>
+            <h1 id="archiveTitle">雨停以后</h1>
+            <div class="archive-tags" id="archiveTags"></div>
+            <div class="archive-prose" id="archiveBody"></div>
+            <footer>
+              <span id="archiveFooter">ENTRY 01 / 08</span>
+              <span>READY</span>
+            </footer>
+          </article>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="../core.js?v=3"></script>
+  <script src="prototypes.js?v=1"></script>
+</body>
+</html>

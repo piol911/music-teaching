@@ -1,0 +1,1488 @@
+(function () {
+  'use strict';
+
+  const Core = window.NotesCore;
+  const Crypto = window.NotesCrypto;
+  const DB = window.NotesDB;
+  const config = window.NOTES_CONFIG || {};
+  const api = new window.NotesSync(config.apiUrl);
+  const TOKEN_KEY = 'xy6300.notes.session';
+  const VAULT_META = 'vault';
+  const CURSOR_META = 'syncCursor';
+  const ACTIVE_META = 'activeNoteId';
+  const DEVICE_META = 'deviceId';
+
+  const $ = selector => document.querySelector(selector);
+  const $$ = selector => [...document.querySelectorAll(selector)];
+  const refs = {
+    app: $('#app'),
+    menuBtn: $('#menuBtn'),
+    closeMenuBtn: $('#closeMenuBtn'),
+    listToggleBtn: $('#listToggleBtn'),
+    listCollapseBtn: $('#listCollapseBtn'),
+    mobileBackdrop: $('#mobileBackdrop'),
+    sideNewBtn: $('#sideNewBtn'),
+    settingsBtn: $('#settingsBtn'),
+    syncBtn: $('#syncBtn'),
+    syncDot: $('#syncDot'),
+    syncLabel: $('#syncLabel'),
+    searchInput: $('#searchInput'),
+    listTitle: $('#listTitle'),
+    listCount: $('#listCount'),
+    noteList: $('#noteList'),
+    allCount: $('#allCount'),
+    tagCloud: $('#tagCloud'),
+    importBtn: $('#importBtn'),
+    exportBtn: $('#exportBtn'),
+    attachmentBtn: $('#attachmentBtn'),
+    addAttachmentBtn: $('#addAttachmentBtn'),
+    attachmentInput: $('#attachmentInput'),
+    lockBtn: $('#lockBtn'),
+    importInput: $('#importInput'),
+    emptyState: $('#emptyState'),
+    editorShell: $('#editorShell'),
+    editorBody: $('#editorBody'),
+    liveEditor: $('#liveEditor'),
+    noteOrdinal: $('#noteOrdinal'),
+    noteDateKicker: $('#noteDateKicker'),
+    backToListBtn: $('#backToListBtn'),
+    titleInput: $('#titleInput'),
+    saveLabel: $('#saveLabel'),
+    wordCount: $('#wordCount'),
+    noteTime: $('#noteTime'),
+    syncHint: $('#syncHint'),
+    noteExtras: $('#noteExtras'),
+    attachmentList: $('#attachmentList'),
+    embedList: $('#embedList'),
+    attachmentDialog: $('#attachmentDialog'),
+    attachmentDialogTitle: $('#attachmentDialogTitle'),
+    attachmentDialogBody: $('#attachmentDialogBody'),
+    convertAttachmentBtn: $('#convertAttachmentBtn'),
+    printAttachmentBtn: $('#printAttachmentBtn'),
+    downloadAttachmentBtn: $('#downloadAttachmentBtn'),
+    closeAttachmentBtn: $('#closeAttachmentBtn'),
+    deleteBtn: $('#deleteBtn'),
+    backlinks: $('#backlinks'),
+    backlinkCount: $('#backlinkCount'),
+    backlinkList: $('#backlinkList'),
+    sidebarResize: $('#sidebarResize'),
+    listResize: $('#listResize'),
+    vaultDialog: $('#vaultDialog'),
+    vaultForm: $('#vaultForm'),
+    vaultDialogTitle: $('#vaultDialogTitle'),
+    vaultDialogCopy: $('#vaultDialogCopy'),
+    confirmField: $('#confirmField'),
+    vaultPassword: $('#vaultPassword'),
+    vaultPasswordConfirm: $('#vaultPasswordConfirm'),
+    vaultSubmitBtn: $('#vaultSubmitBtn'),
+    vaultCloseBtn: $('#vaultCloseBtn'),
+    syncDialog: $('#syncDialog'),
+    syncForm: $('#syncForm'),
+    syncPassword: $('#syncPassword'),
+    syncSubmitBtn: $('#syncSubmitBtn'),
+    syncCloseBtn: $('#syncCloseBtn'),
+    syncError: $('#syncError'),
+    settingsDialog: $('#settingsDialog'),
+    settingStorage: $('#settingStorage'),
+    settingCount: $('#settingCount'),
+    settingCloud: $('#settingCloud'),
+    changeDeviceBtn: $('#changeDeviceBtn'),
+    resetDeviceBtn: $('#resetDeviceBtn'),
+    toast: $('#toast')
+  };
+
+  const state = {
+    key: null,
+    vaultId: '',
+    deviceId: '',
+    notes: [],
+    activeId: '',
+    tag: '',
+    query: '',
+    sidebarCollapsed: false,
+    listCollapsed: false,
+    sidebarWidth: 230,
+    listWidth: 320,
+    syncState: 'local',
+    syncAt: 0,
+    saveTimer: null,
+    syncTimer: null,
+    renderTimer: null,
+    syncRunning: false,
+    syncQueued: false,
+    vaultReady: false,
+    unlockOnly: false,
+    editor: null,
+    attachmentUrls: new Map(),
+    activeAttachment: null,
+    extrasTimer: null
+  };
+
+  function uid() {
+    if (window.crypto && window.crypto.randomUUID) return window.crypto.randomUUID();
+    return Crypto.randomToken(16);
+  }
+
+  function now() {
+    return Date.now();
+  }
+
+  function normalizeTag(value) {
+    return String(value || '')
+      .trim()
+      .replace(/^#/, '')
+      .replace(/\s+/g, '-')
+      .slice(0, 32);
+  }
+
+  function uniqueTags(values) {
+    const tags = [];
+    const seen = new Set();
+    for (const value of values || []) {
+      const tag = normalizeTag(value);
+      const key = tag.toLocaleLowerCase('zh-CN');
+      if (tag && !seen.has(key)) {
+        seen.add(key);
+        tags.push(tag);
+      }
+    }
+    return tags;
+  }
+
+  function normalizeNote(input) {
+    const stamp = now();
+    const requestedId = String(input.id || '');
+    const id = /^[A-Za-z0-9_-]{1,64}$/.test(requestedId) ? requestedId : uid();
+    const folderTags = Core.normalizeFolder(input.folder).split('/').filter(Boolean);
+    let body = String(input.body || '');
+    const bodyTags = Core.extractTags(body);
+    const legacyTags = uniqueTags([
+      ...(Array.isArray(input.manualTags) ? input.manualTags : []),
+      ...folderTags
+    ]).filter(tag => !bodyTags.some(item => item.toLocaleLowerCase('zh-CN') === tag.toLocaleLowerCase('zh-CN')));
+    if (legacyTags.length) {
+      body = `${body.replace(/\s*$/, '')}\n\n${legacyTags.map(tag => `#${tag}`).join(' ')}`;
+    }
+    const tags = Core.extractTags(body);
+    return {
+      id,
+      title: String(input.title || '未命名笔记').trim() || '未命名笔记',
+      body,
+      folder: '',
+      tags,
+      attachments: Array.isArray(input.attachments)
+        ? input.attachments.filter(item => item && /^[a-f0-9]{24,64}$/i.test(String(item.id || ''))).map(item => ({
+            id: String(item.id),
+            name: String(item.name || '未命名文件'),
+            type: String(item.type || 'application/octet-stream'),
+            size: Number(item.size) || 0,
+            kind: String(item.kind || 'file'),
+            createdAt: Number(item.createdAt) || stamp
+          }))
+        : [],
+      createdAt: Number(input.createdAt) || stamp,
+      updatedAt: Number(input.updatedAt) || stamp,
+      deleted: !!input.deleted,
+      version: Number(input.version) || 0,
+      serverUpdatedAt: Number(input.serverUpdatedAt) || 0,
+      dirty: input.dirty !== false,
+      sourcePath: String(input.sourcePath || '')
+    };
+  }
+
+  function makeNote(values) {
+    return normalizeNote({
+      id: uid(),
+      title: '未命名笔记',
+      body: '',
+      createdAt: now(),
+      updatedAt: now(),
+      dirty: true,
+      ...(values || {})
+    });
+  }
+
+  function activeNote() {
+    return state.notes.find(note => note.id === state.activeId && !note.deleted) || null;
+  }
+
+  function showToast(message) {
+    refs.toast.textContent = message;
+    refs.toast.classList.add('on');
+    clearTimeout(showToast.timer);
+    showToast.timer = setTimeout(() => refs.toast.classList.remove('on'), 2400);
+  }
+
+  function setSaveLabel(text) {
+    refs.saveLabel.textContent = text || '已保存';
+  }
+
+  function setSyncState(kind, label) {
+    state.syncState = kind;
+    refs.syncDot.className = `sync-dot ${kind}`;
+    refs.syncLabel.textContent = label;
+    const text = kind === 'ok'
+      ? `已同步 ${Core.formatRelativeTime(state.syncAt, now())}`
+      : kind === 'syncing'
+        ? '正在同步'
+        : kind === 'pending'
+          ? '本地已保存，等待同步'
+          : kind === 'offline'
+            ? '离线编辑中，联网后自动同步'
+            : kind === 'error'
+              ? '同步失败，本地内容仍然保留'
+              : '仅保存在本机，登录后可自动同步';
+    refs.syncHint.textContent = text;
+  }
+
+  function readSession() {
+    try {
+      const value = JSON.parse(localStorage.getItem(TOKEN_KEY) || 'null');
+      if (value && value.token && value.expiresAt > now()) return value;
+      localStorage.removeItem(TOKEN_KEY);
+    } catch (error) {
+      localStorage.removeItem(TOKEN_KEY);
+    }
+    return null;
+  }
+
+  function writeSession(value) {
+    try {
+      if (value) localStorage.setItem(TOKEN_KEY, JSON.stringify(value));
+      else localStorage.removeItem(TOKEN_KEY);
+    } catch (error) { /* 忽略会话存储失败 */ }
+  }
+
+  function notesInScope() {
+    return Core.searchNotes(state.notes, state.query, '', state.tag);
+  }
+
+  function renderSidebar() {
+    const allButton = $('.nav-row[data-folder=""]');
+    allButton.classList.toggle('active', !state.tag);
+    if (!state.tag) allButton.setAttribute('aria-current', 'page');
+    else allButton.removeAttribute('aria-current');
+    refs.allCount.textContent = state.notes.filter(note => !note.deleted).length;
+  }
+
+  function allTags() {
+    const counts = new Map();
+    for (const note of state.notes) {
+      if (note.deleted) continue;
+      for (const tag of note.tags || []) counts.set(tag, (counts.get(tag) || 0) + 1);
+    }
+    return [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'zh-CN'));
+  }
+
+  function renderTags() {
+    const all = allTags();
+    const tags = all.slice(0, 30);
+    refs.tagCloud.innerHTML = tags.length
+      ? tags.map(([tag, count]) => `<button class="tag-chip${state.tag === tag ? ' active' : ''}" type="button" data-tag="${Core.escapeHtml(tag)}" aria-pressed="${state.tag === tag}">#${Core.escapeHtml(tag)} <span>${count}</span></button>`).join('')
+      : '<span class="eyebrow">暂无标签</span>';
+  }
+
+  function fileKind(file) {
+    const type = String(file.type || '').toLowerCase();
+    const name = String(file.name || '').toLowerCase();
+    if (type.startsWith('image/')) return 'image';
+    if (type === 'application/pdf' || name.endsWith('.pdf')) return 'pdf';
+    if (name.endsWith('.docx')) return 'docx';
+    if (name.endsWith('.xlsx') || name.endsWith('.xls')) return 'spreadsheet';
+    return 'file';
+  }
+
+  function formatBytes(size) {
+    const value = Number(size) || 0;
+    if (value < 1024) return `${value} B`;
+    if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
+    return `${(value / 1024 / 1024).toFixed(1)} MB`;
+  }
+
+  function attachmentKindLabel(kind) {
+    return {
+      image: 'IMG',
+      pdf: 'PDF',
+      docx: 'DOC',
+      spreadsheet: 'XLS',
+      file: 'FILE'
+    }[kind] || 'FILE';
+  }
+
+  async function getAttachmentFile(meta) {
+    if (state.attachmentUrls.has(meta.id)) return state.attachmentUrls.get(meta.id);
+    const cipher = await DB.getAttachment(meta.id);
+    if (!cipher) return null;
+    const plain = await Crypto.decryptBytes(state.key, cipher);
+    const blob = new Blob([plain], { type: meta.type || 'application/octet-stream' });
+    const file = new File([blob], meta.name, { type: meta.type || blob.type });
+    const value = { blob, file, url: URL.createObjectURL(blob) };
+    state.attachmentUrls.set(meta.id, value);
+    return value;
+  }
+
+  function revokeAttachment(id) {
+    const value = state.attachmentUrls.get(id);
+    if (value) URL.revokeObjectURL(value.url);
+    state.attachmentUrls.delete(id);
+  }
+
+  function renderEmbeds(note) {
+    const body = note.body || '';
+    const cards = [];
+    const seen = new Set();
+    const bili = /https?:\/\/(?:www\.|m\.)?bilibili\.com\/video\/(BV[A-Za-z0-9]+)/g;
+    for (const match of body.matchAll(bili)) {
+      if (seen.has(match[1]) || cards.length >= 4) continue;
+      seen.add(match[1]);
+      cards.push(`
+        <div class="embed-card">
+          <div class="embed-card-head"><span>Bilibili</span><span>${Core.escapeHtml(match[1])}</span></div>
+          <iframe src="https://player.bilibili.com/player.html?bvid=${encodeURIComponent(match[1])}&page=1&high_quality=1"
+            title="Bilibili 视频 ${Core.escapeHtml(match[1])}" loading="lazy" allowfullscreen></iframe>
+        </div>
+      `);
+    }
+    const xhs = /https?:\/\/(?:www\.)?xiaohongshu\.com\/(?:explore|discovery\/item)\/[A-Za-z0-9]+[^\s)]*/g;
+    for (const match of body.matchAll(xhs)) {
+      if (seen.has(match[0]) || cards.length >= 4) continue;
+      seen.add(match[0]);
+      cards.push(`
+        <div class="embed-card">
+          <div class="embed-card-head"><span>小红书</span><span>外部预览</span></div>
+          <a class="embed-link" href="${Core.escapeHtml(match[0])}" target="_blank" rel="noopener noreferrer">打开小红书原视频<br>${Core.escapeHtml(match[0])}</a>
+        </div>
+      `);
+    }
+    refs.embedList.innerHTML = cards.join('');
+    return cards.length;
+  }
+
+  async function renderNoteExtras(note) {
+    if (!note) {
+      refs.noteExtras.hidden = true;
+      refs.attachmentList.innerHTML = '';
+      refs.embedList.innerHTML = '';
+      return;
+    }
+    const embedCount = renderEmbeds(note);
+    const attachments = note.attachments || [];
+    refs.noteExtras.hidden = !attachments.length && !embedCount;
+    if (!attachments.length) {
+      refs.attachmentList.innerHTML = '';
+      return;
+    }
+
+    refs.attachmentList.innerHTML = attachments.map(meta => `
+      <div class="attachment-card" data-attachment="${meta.id}">
+        <button class="attachment-preview-btn" type="button" data-open-attachment="${meta.id}" aria-label="预览 ${Core.escapeHtml(meta.name)}">
+          <span class="attachment-type">${attachmentKindLabel(meta.kind)}</span>
+          <span class="attachment-info">
+            <span class="attachment-name">${Core.escapeHtml(meta.name)}</span>
+            <span class="attachment-size">${formatBytes(meta.size)}</span>
+          </span>
+        </button>
+        <button class="attachment-remove" type="button" data-remove-attachment="${meta.id}" aria-label="删除附件 ${Core.escapeHtml(meta.name)}">×</button>
+      </div>
+    `).join('');
+
+    for (const meta of attachments.filter(item => item.kind === 'image')) {
+      try {
+        const value = await getAttachmentFile(meta);
+        if (!value) continue;
+        const card = refs.attachmentList.querySelector(`[data-attachment="${meta.id}"]`);
+        const placeholder = card && card.querySelector('.attachment-type');
+        if (!placeholder) continue;
+        const image = document.createElement('img');
+        image.className = 'attachment-thumb';
+        image.src = value.url;
+        image.alt = meta.name;
+        placeholder.replaceWith(image);
+      } catch (error) {
+        console.warn('无法读取附件', meta.id, error);
+      }
+    }
+  }
+
+  function renderExtrasSoon() {
+    clearTimeout(state.extrasTimer);
+    state.extrasTimer = setTimeout(() => renderNoteExtras(activeNote()), 220);
+  }
+
+  function renderList() {
+    const notes = notesInScope();
+    refs.listCount.textContent = String(notes.length);
+    refs.listTitle.textContent = state.tag
+      ? `#${state.tag}`
+      : '全部笔记';
+
+    if (!notes.length) {
+      refs.noteList.innerHTML = `<div class="list-empty">${state.query ? '没有找到匹配的笔记' : '这里还没有笔记'}</div>`;
+      return;
+    }
+
+    refs.noteList.innerHTML = notes.map((note, index) => {
+      const snippet = note.body
+        .replace(/```[\s\S]*?```/g, ' ')
+        .replace(/[#>*_`\[\]]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 120) || '空白笔记';
+      return `<button class="note-row${note.id === state.activeId ? ' active' : ''}" type="button" data-id="${note.id}">
+        <span class="note-index" aria-hidden="true">${String(index + 1).padStart(2, '0')}</span>
+        <span class="note-main">
+          <span class="note-row-top">
+            <span class="note-title">${Core.escapeHtml(note.title)}</span>
+            <span class="note-time">${Core.formatRelativeTime(note.updatedAt, now())}</span>
+          </span>
+          <span class="note-snippet">${Core.escapeHtml(snippet)}</span>
+          ${note.tags.length ? `<span class="note-tags">${note.tags.slice(0, 4).map(tag => `<span>#${Core.escapeHtml(tag)}</span>`).join('')}</span>` : ''}
+        </span>
+      </button>`;
+    }).join('');
+  }
+
+  function renderEditor() {
+    const note = activeNote();
+    const hasNote = !!note;
+    refs.emptyState.hidden = hasNote;
+    refs.editorShell.hidden = !hasNote;
+    if (!note) {
+      document.body.classList.remove('note-open');
+      renderNoteExtras(null);
+      return;
+    }
+
+    const ordered = Core.searchNotes(state.notes, '', '', '');
+    const noteNumber = ordered.findIndex(item => item.id === note.id) + 1;
+    refs.noteOrdinal.textContent = `NOTE ${String(Math.max(1, noteNumber)).padStart(2, '0')}`;
+    refs.noteDateKicker.textContent = new Intl.DateTimeFormat('zh-CN', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    }).format(new Date(note.updatedAt)).replace(/\//g, '.');
+    refs.titleInput.value = note.title;
+    if (state.editor && state.editor.getValue() !== note.body) state.editor.setValue(note.body);
+    refs.wordCount.textContent = `${note.body.replace(/\s/g, '').length.toLocaleString('zh-CN')} 字`;
+    refs.noteTime.textContent = new Date(note.updatedAt).toLocaleString('zh-CN', {
+      month: 'numeric',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+    renderBacklinks();
+    renderNoteExtras(note);
+  }
+
+  function renderBacklinks() {
+    const note = activeNote();
+    if (!note) {
+      refs.backlinks.hidden = true;
+      return;
+    }
+    const links = Core.backlinksFor(state.notes, note.title);
+    refs.backlinks.hidden = links.length === 0;
+    refs.backlinkCount.textContent = String(links.length);
+    refs.backlinkList.innerHTML = links.map(item =>
+      `<button class="backlink-item" type="button" data-id="${item.id}">${Core.escapeHtml(item.title)}</button>`
+    ).join('');
+  }
+
+  function renderAll() {
+    renderSidebar();
+    renderTags();
+    renderList();
+    renderEditor();
+  }
+
+  function renderListSoon() {
+    clearTimeout(state.renderTimer);
+    state.renderTimer = setTimeout(() => {
+      renderList();
+      renderTags();
+      renderSidebar();
+    }, 180);
+  }
+
+  function selectNote(id, options) {
+    if (state.activeId && state.activeId !== id) saveNow();
+    const note = state.notes.find(item => item.id === id && !item.deleted);
+    if (!note) return;
+    state.activeId = note.id;
+    DB.setMeta(ACTIVE_META, note.id).catch(() => {});
+    document.body.classList.add('note-open');
+    document.body.classList.remove('menu-open');
+    refs.menuBtn.setAttribute('aria-expanded', String(window.innerWidth > 900 && !state.sidebarCollapsed));
+    renderList();
+    renderEditor();
+    if (!options || options.focus !== false) {
+      setTimeout(() => {
+        if (window.innerWidth > 620 && state.editor) state.editor.focus();
+      }, 20);
+    }
+  }
+
+  function createNote(values) {
+    saveNow();
+    const note = makeNote(values);
+    state.notes.push(note);
+    state.tag = '';
+    DB.putNote(state.key, Crypto, note).catch(error => showToast(`保存失败：${error.message}`));
+    selectNote(note.id);
+    renderAll();
+    setSaveLabel('已保存到本机');
+    scheduleSync();
+    return note;
+  }
+
+  function updateFromInputs() {
+    const note = activeNote();
+    if (!note) return;
+    note.title = refs.titleInput.value.trim() || '未命名笔记';
+    noteChanged(note);
+  }
+
+  function updateBody(value) {
+    const note = activeNote();
+    if (!note) return;
+    note.body = String(value || '');
+    noteChanged(note);
+  }
+
+  function noteChanged(note) {
+    note.tags = Core.extractTags(note.body);
+    note.updatedAt = now();
+    note.dirty = true;
+    refs.wordCount.textContent = `${note.body.replace(/\s/g, '').length.toLocaleString('zh-CN')} 字`;
+    refs.noteTime.textContent = new Date(note.updatedAt).toLocaleString('zh-CN', {
+      month: 'numeric',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+    setSaveLabel('保存中…');
+    if (!navigator.onLine) setSyncState('offline', '离线编辑');
+    else if (!readSession()) setSyncState('local', '仅本机');
+    else setSyncState('pending', '等待同步');
+    renderListSoon();
+    renderExtrasSoon();
+    scheduleSave();
+    scheduleSync();
+  }
+
+  function scheduleSave() {
+    clearTimeout(state.saveTimer);
+    state.saveTimer = setTimeout(saveNow, 420);
+  }
+
+  function saveNow() {
+    clearTimeout(state.saveTimer);
+    state.saveTimer = null;
+    const note = activeNote();
+    if (!note || !state.key) return;
+    if (note.title === '未命名笔记' && !note.body.trim()) {
+      setSaveLabel('已保存到本机');
+      return;
+    }
+    DB.putNote(state.key, Crypto, note)
+      .then(() => setSaveLabel('已保存到本机'))
+      .catch(error => {
+        setSaveLabel('保存失败');
+        showToast(`保存失败：${error.message}`);
+      });
+  }
+
+  function deleteActive() {
+    const note = activeNote();
+    if (!note) return;
+    if (!confirm(`删除「${note.title}」？删除记录会同步到其他设备。`)) return;
+    note.deleted = true;
+    note.dirty = true;
+    note.updatedAt = now();
+    DB.putNote(state.key, Crypto, note).catch(() => {});
+    const next = notesInScope().find(item => item.id !== note.id);
+    state.activeId = next ? next.id : '';
+    if (next) {
+      selectNote(next.id, { focus: false });
+    } else {
+      document.body.classList.remove('note-open');
+      renderAll();
+    }
+    scheduleSync();
+    showToast('笔记已移到删除记录');
+  }
+
+  async function setupVault(password, confirmation) {
+    if (!password || password.length < 10) throw new Error('笔记库口令至少需要 10 个字符');
+    if (!state.unlockOnly && password !== confirmation) throw new Error('两次输入的口令不一致');
+    refs.vaultSubmitBtn.disabled = true;
+    refs.vaultSubmitBtn.textContent = '正在建立加密笔记库…';
+    try {
+      const derived = await Crypto.deriveVault(password);
+      const existing = await DB.getMeta(VAULT_META);
+      if (existing && existing.vaultId && existing.vaultId !== derived.vaultId) {
+        throw new Error('这个口令与当前设备上的笔记库不一致');
+      }
+      state.key = derived.key;
+      state.vaultId = derived.vaultId;
+      await DB.setMeta(VAULT_META, {
+        v: 1,
+        vaultId: derived.vaultId,
+        key: derived.key,
+        iterations: derived.iterations,
+        createdAt: existing && existing.createdAt || now()
+      });
+      state.vaultReady = true;
+      state.unlockOnly = false;
+      refs.vaultDialog.close();
+      await startNotes();
+    } finally {
+      refs.vaultSubmitBtn.disabled = false;
+      refs.vaultSubmitBtn.textContent = state.unlockOnly ? '解锁' : '开始使用';
+      refs.vaultPassword.value = '';
+      refs.vaultPasswordConfirm.value = '';
+    }
+  }
+
+  async function startNotes() {
+    state.notes = await DB.loadNotes(state.key, Crypto);
+    if (!state.notes.length) {
+      state.notes.push(makeNote({
+        title: '欢迎来到私人笔记',
+        body: '# 欢迎来到私人笔记\n\n这里是你的加密笔记库。\n\n- 右上角 **＋** 新建笔记\n- 用 `⌘K` 搜索\n- 用 `[[笔记标题]]` 建立双向链接\n- 在「位置」里输入 `100-工作/教学` 即可建立文件夹层级\n\n> 笔记正文会在浏览器中加密，再同步到云端。\n\n#开始',
+        folder: '',
+        dirty: false,
+        updatedAt: now()
+      }));
+      await DB.putNotes(state.key, Crypto, state.notes);
+    }
+
+    state.notes = state.notes.map(normalizeNote);
+    const lastActive = await DB.getMeta(ACTIVE_META);
+    state.activeId = state.notes.some(note => note.id === lastActive && !note.deleted)
+      ? lastActive
+      : (notesInScope()[0] || {}).id || '';
+    if (state.activeId) document.body.classList.add('note-open');
+    renderAll();
+    updateOnlineState();
+    const session = readSession();
+    if (session) scheduleSync(350);
+    registerServiceWorker();
+  }
+
+  function updateOnlineState() {
+    if (!navigator.onLine) {
+      setSyncState('offline', '离线编辑');
+      return;
+    }
+    if (!readSession()) {
+      setSyncState('local', '仅本机');
+      refs.syncHint.textContent = '仅保存在本机';
+      return;
+    }
+    if (state.syncState !== 'syncing') {
+      if (state.notes.some(note => note.dirty)) setSyncState('pending', '等待同步');
+      else setSyncState('ok', '已同步');
+    }
+  }
+
+  function scheduleSync(delay) {
+    if (!state.vaultReady || !readSession() || !navigator.onLine) return;
+    clearTimeout(state.syncTimer);
+    state.syncTimer = setTimeout(syncNow, Number(delay) || 1200);
+  }
+
+  function noteContentEqual(a, b) {
+    return !!a && !!b &&
+      a.title === b.title &&
+      a.body === b.body &&
+      a.folder === b.folder &&
+      !!a.deleted === !!b.deleted;
+  }
+
+  function conflictCopy(local, remote) {
+    const copy = normalizeNote({
+      ...local,
+      id: uid(),
+      title: `${local.title}（冲突副本 ${new Date().toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}）`,
+      sourcePath: '',
+      version: 0,
+      serverUpdatedAt: 0,
+      dirty: true,
+      createdAt: now(),
+      updatedAt: now()
+    });
+    if (noteContentEqual(local, remote)) return null;
+    return copy;
+  }
+
+  async function applyRemoteRecord(record) {
+    if (!record || !record.id || !record.cipher) return [];
+    const remote = normalizeNote({
+      ...(await Crypto.decryptJson(state.key, record.cipher)),
+      id: record.id,
+      version: Number(record.version) || 0,
+      serverUpdatedAt: Number(record.updatedAt) || 0,
+      dirty: false
+    });
+    const index = state.notes.findIndex(note => note.id === record.id);
+    const local = index >= 0 ? state.notes[index] : null;
+    const added = [];
+
+    if (!local) {
+      state.notes.push(remote);
+      await DB.putNote(state.key, Crypto, remote);
+      return [remote.id];
+    }
+
+    if (local.dirty) {
+      const copy = conflictCopy(local, remote);
+      if (copy) {
+        state.notes.push(copy);
+        await DB.putNote(state.key, Crypto, copy);
+        added.push(copy.id);
+      }
+    }
+
+    state.notes[index] = remote;
+    await DB.putNote(state.key, Crypto, remote);
+    return [remote.id, ...added];
+  }
+
+  async function pullChanges(token) {
+    let cursor = Number(await DB.getMeta(CURSOR_META)) || 0;
+    let changed = false;
+    for (let page = 0; page < 20; page += 1) {
+      const data = await api.pull(token, cursor);
+      for (const record of data.records || []) {
+        await applyRemoteRecord(record);
+        changed = true;
+      }
+      cursor = Number(data.cursor) || cursor;
+      await DB.setMeta(CURSOR_META, cursor);
+      if (!data.hasMore) break;
+    }
+    if (changed) renderAll();
+  }
+
+  async function pushChanges(token) {
+    let remaining = state.notes.filter(note => note.dirty);
+    while (remaining.length) {
+      const batch = [];
+      let batchChars = 0;
+      for (const note of remaining) {
+        const item = {
+          id: note.id,
+          baseVersion: Number(note.version) || 0,
+          cipher: await Crypto.encryptJson(state.key, {
+            title: note.title,
+            body: note.body,
+            folder: note.folder,
+            tags: note.tags,
+            attachments: note.attachments,
+            createdAt: note.createdAt,
+            updatedAt: note.updatedAt,
+            deleted: note.deleted,
+            sourcePath: note.sourcePath
+          })
+        };
+        const size = JSON.stringify(item).length;
+        if (batch.length && (batch.length >= 8 || batchChars + size > 70000)) break;
+        if (size > 70000) throw new Error(`「${note.title}」过长，暂时无法同步`);
+        batch.push({ note, item });
+        batchChars += size;
+      }
+      if (!batch.length) break;
+
+      const data = await api.push(token, batch.map(entry => entry.item));
+      const accepted = new Map((data.accepted || []).map(item => [item.id, item]));
+      for (const { note } of batch) {
+        const result = accepted.get(note.id);
+        if (!result) continue;
+        note.version = Number(result.version) || note.version;
+        note.serverUpdatedAt = Number(result.updatedAt) || now();
+        note.dirty = false;
+        await DB.putNote(state.key, Crypto, note);
+      }
+      for (const conflict of data.conflicts || []) await applyRemoteRecord(conflict);
+      const handled = new Set(batch.map(entry => entry.note.id));
+      remaining = remaining.filter(note => note.dirty && !handled.has(note.id));
+    }
+  }
+
+  async function syncNow() {
+    clearTimeout(state.syncTimer);
+    if (!state.vaultReady || !navigator.onLine) {
+      updateOnlineState();
+      return;
+    }
+    const session = readSession();
+    if (!session) {
+      setSyncState('local', '仅本机');
+      return;
+    }
+    if (!api.configured) {
+      setSyncState('error', '未配置');
+      showToast('云同步地址尚未配置');
+      return;
+    }
+    if (state.syncRunning) {
+      state.syncQueued = true;
+      return;
+    }
+
+    state.syncRunning = true;
+    setSyncState('syncing', '同步中');
+    try {
+      saveNow();
+      await pullChanges(session.token);
+      await pushChanges(session.token);
+      state.syncAt = now();
+      setSyncState('ok', '已同步');
+    } catch (error) {
+      if (error.status === 401 || error.status === 403) {
+        writeSession(null);
+        setSyncState('local', '需登录');
+        showToast('登录已过期，请重新连接云同步');
+      } else {
+        setSyncState(navigator.onLine ? 'error' : 'offline', navigator.onLine ? '同步失败' : '离线编辑');
+        showToast(`同步失败：${error.message}`);
+      }
+    } finally {
+      state.syncRunning = false;
+      if (state.syncQueued) {
+        state.syncQueued = false;
+        scheduleSync(500);
+      }
+    }
+  }
+
+  async function connectCloud(password) {
+    if (!password) throw new Error('请输入笔记口令');
+    refs.syncSubmitBtn.disabled = true;
+    refs.syncSubmitBtn.textContent = '正在验证…';
+    refs.syncError.textContent = '';
+    try {
+      const derived = await Crypto.deriveVault(password);
+      if (derived.vaultId !== state.vaultId) throw new Error('口令与当前笔记库不一致');
+      const session = await api.login(derived.authSecret);
+      writeSession(session);
+      refs.syncDialog.close();
+      refs.syncPassword.value = '';
+      await syncNow();
+    } catch (error) {
+      refs.syncError.textContent = error.message;
+    } finally {
+      refs.syncSubmitBtn.disabled = false;
+      refs.syncSubmitBtn.textContent = '连接并同步';
+    }
+  }
+
+  async function importFiles(fileList) {
+    const files = [...fileList].filter(file => /\.(md|markdown|txt)$/i.test(file.name));
+    if (!files.length) {
+      showToast('没有找到 Markdown 文件');
+      return;
+    }
+    showToast(`正在导入 ${files.length} 个文件…`);
+    const imported = [];
+    for (const file of files) {
+      const relative = file.webkitRelativePath || file.name;
+      const parts = relative.split('/').filter(Boolean);
+      if (parts.some(part => part.startsWith('.') || part === 'node_modules')) continue;
+      const filename = parts.pop();
+      if (parts.length) parts.shift();
+      const importedTags = uniqueTags(parts.flatMap(part => part.split('/')));
+      let body = await file.text();
+      const bodyTags = Core.extractTags(body).map(tag => tag.toLocaleLowerCase('zh-CN'));
+      const missingTags = importedTags.filter(tag => !bodyTags.includes(tag.toLocaleLowerCase('zh-CN')));
+      if (missingTags.length) {
+        body = `${body.replace(/\s*$/, '')}\n\n${missingTags.map(tag => `#${tag}`).join(' ')}`;
+      }
+      const existing = state.notes.find(note => note.sourcePath === relative && !note.deleted);
+      if (existing) {
+        existing.title = Core.titleFromFilename(filename);
+        existing.body = body;
+        existing.tags = Core.extractTags(body);
+        existing.updatedAt = Number(file.lastModified) || now();
+        existing.dirty = true;
+      } else {
+        imported.push(makeNote({
+          title: Core.titleFromFilename(filename),
+          body,
+          tags: Core.extractTags(body),
+          createdAt: Number(file.lastModified) || now(),
+          updatedAt: Number(file.lastModified) || now(),
+          sourcePath: relative,
+          dirty: true
+        }));
+      }
+    }
+    const updates = state.notes.filter(note => note.sourcePath && files.some(file => file.webkitRelativePath === note.sourcePath));
+    state.notes.push(...imported);
+    await DB.putNotes(state.key, Crypto, [...imported, ...updates]);
+    renderAll();
+    scheduleSync(700);
+    showToast(`已导入 ${imported.length + updates.length} 篇笔记`);
+  }
+
+  async function addAttachments(fileList) {
+    const note = activeNote();
+    if (!note) {
+      showToast('请先选择或新建一篇笔记');
+      return;
+    }
+    const files = [...fileList];
+    if (!files.length) return;
+    let added = 0;
+    for (const file of files) {
+      const kind = fileKind(file);
+      if (kind === 'file') {
+        showToast(`暂不支持：${file.name}`);
+        continue;
+      }
+      if (file.size > 20 * 1024 * 1024) {
+        showToast(`文件超过 20MB：${file.name}`);
+        continue;
+      }
+      const id = Crypto.randomToken(16);
+      try {
+        const bytes = await file.arrayBuffer();
+        const cipher = await Crypto.encryptBytes(state.key, bytes);
+        await DB.putAttachment(id, cipher);
+        note.attachments.push({
+          id,
+          name: file.name,
+          type: file.type || 'application/octet-stream',
+          size: file.size,
+          kind,
+          createdAt: now()
+        });
+        added += 1;
+      } catch (error) {
+        console.error('附件保存失败', error);
+        showToast(`无法保存：${file.name}`);
+      }
+    }
+    if (added) {
+      noteChanged(note);
+      await DB.putNote(state.key, Crypto, note);
+      renderNoteExtras(note);
+      showToast(`已添加 ${added} 个文件到本机`);
+    }
+  }
+
+  async function openAttachment(id) {
+    const note = activeNote();
+    const meta = note && (note.attachments || []).find(item => item.id === id);
+    if (!meta) return;
+    let value;
+    try {
+      value = await getAttachmentFile(meta);
+    } catch (error) {
+      console.error(error);
+    }
+    refs.attachmentDialogTitle.textContent = meta.name;
+    refs.attachmentDialogBody.innerHTML = '';
+    refs.convertAttachmentBtn.hidden = !['docx', 'spreadsheet'].includes(meta.kind);
+    refs.printAttachmentBtn.hidden = !['docx', 'spreadsheet'].includes(meta.kind);
+    state.activeAttachment = value ? { meta, ...value } : { meta };
+    if (!value) {
+      refs.attachmentDialogBody.innerHTML = '<div class="office-convert-result">这个附件目前只存在于上传它的设备上，尚未同步到此设备。</div>';
+      refs.attachmentDialog.showModal();
+      return;
+    }
+
+    if (meta.kind === 'image') {
+      const image = document.createElement('img');
+      image.className = 'attachment-image';
+      image.src = value.url;
+      image.alt = meta.name;
+      refs.attachmentDialogBody.append(image);
+    } else if (meta.kind === 'pdf') {
+      const frame = document.createElement('iframe');
+      frame.className = 'attachment-pdf';
+      frame.src = value.url;
+      frame.title = meta.name;
+      refs.attachmentDialogBody.append(frame);
+    } else if (['docx', 'spreadsheet'].includes(meta.kind)) {
+      if (!window.XYOfficePreview) {
+        refs.attachmentDialogBody.innerHTML = '<div class="office-convert-result">Office 预览组件未加载。</div>';
+      } else {
+        const shell = document.createElement('div');
+        shell.className = 'office-preview-shell';
+        shell.innerHTML = '<div class="office-convert-result">正在渲染文件…</div>';
+        refs.attachmentDialogBody.append(shell);
+        try {
+          await window.XYOfficePreview.previewOffice(value.file, shell);
+        } catch (error) {
+          shell.innerHTML = `<div class="office-convert-result">预览失败：${Core.escapeHtml(error.message)}</div>`;
+        }
+      }
+    }
+    refs.attachmentDialog.showModal();
+  }
+
+  async function removeAttachment(id) {
+    const note = activeNote();
+    if (!note) return;
+    const meta = (note.attachments || []).find(item => item.id === id);
+    if (!meta || !confirm(`删除附件「${meta.name}」？`)) return;
+    note.attachments = note.attachments.filter(item => item.id !== id);
+    await DB.deleteAttachment(id);
+    revokeAttachment(id);
+    noteChanged(note);
+    await DB.putNote(state.key, Crypto, note);
+    renderNoteExtras(note);
+  }
+
+  async function convertActiveAttachment() {
+    if (!state.activeAttachment || !window.XYOfficePreview) return;
+    const { meta, file } = state.activeAttachment;
+    if (!file) return;
+    refs.convertAttachmentBtn.disabled = true;
+    refs.convertAttachmentBtn.textContent = '正在转换…';
+    try {
+      const markdown = await window.XYOfficePreview.officeToMarkdown(file);
+      const base = meta.name.replace(/\.(docx|xlsx|xls)$/i, '');
+      refs.attachmentDialog.close();
+      createNote({
+        title: `${base} · Markdown`,
+        body: `${markdown}\n\n#转换`,
+        tags: Core.extractTags(markdown)
+      });
+      showToast('已生成 Markdown 笔记');
+    } catch (error) {
+      showToast(`转换失败：${error.message}`);
+    } finally {
+      refs.convertAttachmentBtn.disabled = false;
+      refs.convertAttachmentBtn.textContent = '转为 Markdown';
+    }
+  }
+
+  function printActiveAttachment() {
+    if (!state.activeAttachment || !state.activeAttachment.file) return;
+    const title = state.activeAttachment.meta.name;
+    const content = refs.attachmentDialogBody.innerHTML;
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      showToast('浏览器阻止了打印窗口');
+      return;
+    }
+    printWindow.opener = null;
+    const cssUrl = new URL('styles.css', location.href).href;
+    printWindow.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${Core.escapeHtml(title)}</title><link rel="stylesheet" href="${cssUrl}"><style>body{margin:0;background:#fff} .office-preview-shell{padding:0;background:#fff} .office-sheet-tabs{display:none!important}.office-sheet{padding:0;border:0}@page{margin:12mm}</style></head><body class="attachment-dialog-body">${content}</body></html>`);
+    printWindow.document.close();
+    printWindow.document.querySelectorAll('.office-sheet').forEach(sheet => { sheet.hidden = false; });
+    printWindow.setTimeout(() => {
+      printWindow.focus();
+      printWindow.print();
+    }, 500);
+  }
+
+  function downloadActiveAttachment() {
+    if (!state.activeAttachment) return;
+    if (!state.activeAttachment.url) {
+      showToast('该文件尚未同步到此设备');
+      return;
+    }
+    const link = document.createElement('a');
+    link.href = state.activeAttachment.url;
+    link.download = state.activeAttachment.meta.name;
+    link.click();
+  }
+
+  function exportBackup() {
+    const notes = state.notes.filter(note => !note.deleted);
+    if (!notes.length) {
+      showToast('还没有可导出的笔记');
+      return;
+    }
+    if (!confirm('备份文件包含未加密的笔记正文。确认下载到这台设备吗？')) return;
+    const payload = {
+      format: 'xy6300-notes-backup',
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      notes: notes.map(({ dirty, version, serverUpdatedAt, ...note }) => note)
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `xy6300-notes-${new Date().toISOString().slice(0, 10)}.json`;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(link.href), 1500);
+  }
+
+  async function lockVault() {
+    if (!confirm('锁定后会清除本机活动会话，下次需重新输入笔记口令。继续吗？')) return;
+    saveNow();
+    const vault = await DB.getMeta(VAULT_META);
+    if (!vault || !vault.vaultId) return;
+    await DB.setMeta(VAULT_META, { ...vault, key: null });
+    writeSession(null);
+    state.key = null;
+    state.notes = [];
+    state.activeId = '';
+    state.vaultReady = false;
+    showVaultDialog('unlock');
+  }
+
+  function showVaultDialog(mode) {
+    state.unlockOnly = mode === 'unlock';
+    refs.vaultDialogTitle.textContent = state.unlockOnly ? '解锁笔记库' : '设置加密笔记库';
+    refs.vaultDialogCopy.textContent = state.unlockOnly
+      ? '输入这台设备使用的笔记口令，解密本地笔记并恢复同步会话。'
+      : '笔记会在本机加密。换设备时输入同一个口令，就能解密同一份笔记库。';
+    refs.confirmField.hidden = state.unlockOnly;
+    refs.vaultPassword.placeholder = state.unlockOnly ? '输入现有笔记口令' : '至少 10 个字符';
+    refs.vaultSubmitBtn.textContent = state.unlockOnly ? '解锁' : '开始使用';
+    refs.vaultPassword.value = '';
+    refs.vaultPasswordConfirm.value = '';
+    refs.vaultDialog.showModal();
+    setTimeout(() => refs.vaultPassword.focus(), 100);
+  }
+
+  async function resetDevice() {
+    if (!confirm('这会清除本机加密缓存，云端数据不会被删除。确认继续吗？')) return;
+    await DB.clearAll();
+    localStorage.removeItem(TOKEN_KEY);
+    location.reload();
+  }
+
+  function openSettings() {
+    refs.settingStorage.textContent = 'IndexedDB · 加密';
+    refs.settingCount.textContent = state.notes.filter(note => !note.deleted).length;
+    refs.settingCloud.textContent = readSession() ? '已登录' : '未连接';
+    refs.settingsDialog.showModal();
+  }
+
+  function applyLayout() {
+    const listCollapsed = state.listCollapsed && window.innerWidth > 900;
+    document.documentElement.style.setProperty('--sidebar-w', `${state.sidebarCollapsed ? 0 : state.sidebarWidth}px`);
+    document.documentElement.style.setProperty('--list-w', `${listCollapsed ? 0 : state.listWidth}px`);
+    document.body.classList.toggle('sidebar-collapsed', state.sidebarCollapsed);
+    document.body.classList.toggle('list-collapsed', listCollapsed);
+    refs.menuBtn.setAttribute('aria-expanded', String(!state.sidebarCollapsed));
+    refs.listToggleBtn.setAttribute('aria-expanded', String(!listCollapsed));
+    refs.sidebarResize.setAttribute('aria-valuenow', String(state.sidebarWidth));
+    refs.listResize.setAttribute('aria-valuenow', String(state.listWidth));
+    const label = refs.menuBtn.querySelector('span');
+    if (label) label.textContent = state.sidebarCollapsed ? '打开菜单' : '菜单';
+  }
+
+  async function saveUiPreferences() {
+    try {
+      await DB.setMeta('ui', {
+        sidebarCollapsed: state.sidebarCollapsed,
+        listCollapsed: state.listCollapsed,
+        sidebarWidth: state.sidebarWidth,
+        listWidth: state.listWidth
+      });
+    } catch (error) { /* UI 偏好保存失败不影响笔记 */ }
+  }
+
+  function toggleSidebar() {
+    if (window.innerWidth <= 900) {
+      const open = document.body.classList.toggle('menu-open');
+      refs.menuBtn.setAttribute('aria-expanded', String(open));
+      return;
+    }
+    state.sidebarCollapsed = !state.sidebarCollapsed;
+    applyLayout();
+    saveUiPreferences();
+  }
+
+  function setListCollapsed(collapsed) {
+    if (window.innerWidth <= 900) return;
+    state.listCollapsed = !!collapsed;
+    applyLayout();
+    saveUiPreferences();
+  }
+
+  function bindResize(handle, key, minimum, maximum) {
+    let startX = 0;
+    let startWidth = 0;
+    let dragging = false;
+
+    handle.addEventListener('pointerdown', event => {
+      if (window.innerWidth <= 900 || state.sidebarCollapsed && key === 'sidebarWidth') return;
+      dragging = true;
+      startX = event.clientX;
+      startWidth = state[key];
+      handle.setPointerCapture(event.pointerId);
+      document.body.classList.add('resizing');
+      event.preventDefault();
+    });
+
+    handle.addEventListener('pointermove', event => {
+      if (!dragging) return;
+      const next = Math.min(maximum, Math.max(minimum, Math.round(startWidth + event.clientX - startX)));
+      state[key] = next;
+      applyLayout();
+    });
+
+    function stop() {
+      if (!dragging) return;
+      dragging = false;
+      document.body.classList.remove('resizing');
+      saveUiPreferences();
+    }
+
+    handle.addEventListener('pointerup', stop);
+    handle.addEventListener('pointercancel', stop);
+    handle.addEventListener('keydown', event => {
+      if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+      event.preventDefault();
+      const delta = event.key === 'ArrowRight' ? 10 : -10;
+      state[key] = Math.min(maximum, Math.max(minimum, state[key] + delta));
+      applyLayout();
+      saveUiPreferences();
+    });
+    handle.addEventListener('dblclick', () => {
+      if (state.sidebarCollapsed && key === 'sidebarWidth') return;
+      state[key] = key === 'sidebarWidth' ? 230 : 320;
+      applyLayout();
+      saveUiPreferences();
+    });
+  }
+
+  function handleWikiTarget(target) {
+    const wanted = Core.normalizeSearchTarget ? Core.normalizeSearchTarget(target) : target.trim().toLocaleLowerCase('zh-CN');
+    const found = state.notes.find(note => !note.deleted && note.title.trim().toLocaleLowerCase('zh-CN') === wanted);
+    if (found) {
+      selectNote(found.id, { focus: false });
+      return;
+    }
+    if (confirm(`没有名为「${target}」的笔记，现在创建吗？`)) {
+      createNote({ title: target.trim(), body: `# ${target.trim()}\n\n` });
+    }
+  }
+
+  function bindEvents() {
+    const create = () => createNote();
+    refs.sideNewBtn.addEventListener('click', create);
+    refs.settingsBtn.addEventListener('click', openSettings);
+    refs.deleteBtn.addEventListener('click', deleteActive);
+
+    refs.menuBtn.addEventListener('click', toggleSidebar);
+    refs.closeMenuBtn.addEventListener('click', () => {
+      if (window.innerWidth <= 900) {
+        document.body.classList.remove('menu-open');
+        refs.menuBtn.setAttribute('aria-expanded', 'false');
+      } else {
+        state.sidebarCollapsed = true;
+        applyLayout();
+        saveUiPreferences();
+      }
+    });
+    refs.mobileBackdrop.addEventListener('click', () => {
+      document.body.classList.remove('menu-open');
+      refs.menuBtn.setAttribute('aria-expanded', 'false');
+    });
+    refs.listToggleBtn.addEventListener('click', () => setListCollapsed(!state.listCollapsed));
+    refs.listCollapseBtn.addEventListener('click', () => setListCollapsed(true));
+    refs.backToListBtn.addEventListener('click', () => {
+      saveNow();
+      document.body.classList.remove('note-open');
+    });
+
+    refs.noteList.addEventListener('click', event => {
+      const row = event.target.closest('.note-row');
+      if (row) selectNote(row.dataset.id, { focus: false });
+    });
+    $('.nav-row[data-folder=""]').addEventListener('click', () => {
+      state.tag = '';
+      document.body.classList.remove('menu-open');
+      refs.menuBtn.setAttribute('aria-expanded', 'false');
+      renderSidebar();
+      renderTags();
+      renderList();
+    });
+    refs.tagCloud.addEventListener('click', event => {
+      const chip = event.target.closest('[data-tag]');
+      if (!chip) return;
+      state.tag = state.tag === chip.dataset.tag ? '' : chip.dataset.tag;
+      document.body.classList.remove('menu-open');
+      refs.menuBtn.setAttribute('aria-expanded', 'false');
+      renderSidebar();
+      renderTags();
+      renderList();
+    });
+    refs.backlinkList.addEventListener('click', event => {
+      const row = event.target.closest('[data-id]');
+      if (row) selectNote(row.dataset.id, { focus: false });
+    });
+
+    refs.searchInput.addEventListener('input', () => {
+      state.query = refs.searchInput.value;
+      renderList();
+    });
+    refs.titleInput.addEventListener('input', updateFromInputs);
+
+    refs.syncBtn.addEventListener('click', () => {
+      if (readSession()) {
+        syncNow();
+      } else {
+        refs.syncError.textContent = '';
+        refs.syncDialog.showModal();
+        setTimeout(() => refs.syncPassword.focus(), 80);
+      }
+    });
+    refs.syncCloseBtn.addEventListener('click', () => refs.syncDialog.close());
+    refs.syncForm.addEventListener('submit', event => {
+      event.preventDefault();
+      connectCloud(refs.syncPassword.value).catch(error => {
+        refs.syncError.textContent = error.message;
+      });
+    });
+
+    refs.importBtn.addEventListener('click', () => refs.importInput.click());
+    refs.importInput.addEventListener('change', () => {
+      importFiles(refs.importInput.files).finally(() => {
+        refs.importInput.value = '';
+      });
+    });
+    refs.attachmentBtn.addEventListener('click', () => refs.attachmentInput.click());
+    refs.addAttachmentBtn.addEventListener('click', () => refs.attachmentInput.click());
+    refs.attachmentInput.addEventListener('change', () => {
+      addAttachments(refs.attachmentInput.files).finally(() => {
+        refs.attachmentInput.value = '';
+      });
+    });
+    refs.attachmentList.addEventListener('click', event => {
+      const open = event.target.closest('[data-open-attachment]');
+      if (open) {
+        openAttachment(open.dataset.openAttachment);
+        return;
+      }
+      const remove = event.target.closest('[data-remove-attachment]');
+      if (remove) removeAttachment(remove.dataset.removeAttachment);
+    });
+    refs.closeAttachmentBtn.addEventListener('click', () => refs.attachmentDialog.close());
+    refs.convertAttachmentBtn.addEventListener('click', convertActiveAttachment);
+    refs.printAttachmentBtn.addEventListener('click', printActiveAttachment);
+    refs.downloadAttachmentBtn.addEventListener('click', downloadActiveAttachment);
+    refs.exportBtn.addEventListener('click', exportBackup);
+    refs.lockBtn.addEventListener('click', lockVault);
+
+    refs.vaultForm.addEventListener('submit', event => {
+      event.preventDefault();
+      setupVault(refs.vaultPassword.value, refs.vaultPasswordConfirm.value).catch(error => {
+        showToast(error.message);
+        refs.vaultPasswordConfirm.value = '';
+      });
+    });
+    refs.vaultCloseBtn.addEventListener('click', () => {
+      if (state.vaultReady) refs.vaultDialog.close();
+    });
+    refs.vaultDialog.addEventListener('cancel', event => {
+      if (!state.vaultReady) event.preventDefault();
+    });
+
+    $$('[data-close-settings]').forEach(button => {
+      button.addEventListener('click', () => refs.settingsDialog.close());
+    });
+    refs.changeDeviceBtn.addEventListener('click', () => {
+      refs.settingsDialog.close();
+      showToast('在另一台设备打开本页，输入同一个笔记口令即可');
+    });
+    refs.resetDeviceBtn.addEventListener('click', resetDevice);
+
+    window.addEventListener('online', () => {
+      updateOnlineState();
+      scheduleSync(200);
+    });
+    window.addEventListener('offline', () => setSyncState('offline', '离线编辑'));
+    window.addEventListener('focus', () => scheduleSync(300));
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) scheduleSync(300);
+    });
+    window.addEventListener('beforeunload', saveNow);
+    window.addEventListener('resize', applyLayout);
+
+    document.addEventListener('keydown', event => {
+      const mod = event.metaKey || event.ctrlKey;
+      if (mod && event.key.toLowerCase() === 'n') {
+        event.preventDefault();
+        create();
+      } else if (mod && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        refs.searchInput.focus();
+        refs.searchInput.select();
+      } else if (mod && event.key.toLowerCase() === 's') {
+        event.preventDefault();
+        updateFromInputs();
+        saveNow();
+        showToast('已保存到本机');
+      } else if (event.key === 'Escape') {
+        document.body.classList.remove('menu-open');
+        refs.menuBtn.setAttribute('aria-expanded', String(window.innerWidth > 900 && !state.sidebarCollapsed));
+        if (window.innerWidth <= 620 && document.body.classList.contains('note-open')) {
+          saveNow();
+          document.body.classList.remove('note-open');
+        }
+      }
+    });
+
+    bindResize(refs.sidebarResize, 'sidebarWidth', 180, 360);
+    bindResize(refs.listResize, 'listWidth', 240, 480);
+
+    setInterval(() => {
+      if (!document.hidden && readSession()) scheduleSync(0);
+      renderListSoon();
+    }, 8000);
+  }
+
+  function registerServiceWorker() {
+    if (!('serviceWorker' in navigator) || !/^https?:$/.test(location.protocol)) return;
+    navigator.serviceWorker.register('sw.js', { scope: './' }).catch(error => {
+      console.warn('Service Worker 注册失败', error);
+    });
+  }
+
+  async function boot() {
+    bindEvents();
+    try {
+      if (!window.XYLiveEditor || typeof window.XYLiveEditor.createLiveEditor !== 'function') {
+        throw new Error('即时编辑器未加载');
+      }
+      state.editor = window.XYLiveEditor.createLiveEditor({
+        parent: refs.liveEditor,
+        value: '',
+        onChange: updateBody,
+        onWikiLink: handleWikiTarget
+      });
+      state.deviceId = await DB.getMeta(DEVICE_META);
+      if (!state.deviceId) {
+        state.deviceId = Crypto.randomToken(12);
+        await DB.setMeta(DEVICE_META, state.deviceId);
+      }
+      const preferences = await DB.getMeta('ui');
+      if (preferences) {
+        state.sidebarCollapsed = !!preferences.sidebarCollapsed;
+        state.listCollapsed = !!preferences.listCollapsed;
+        state.sidebarWidth = Math.min(360, Math.max(180, Number(preferences.sidebarWidth) || 230));
+        state.listWidth = Math.min(480, Math.max(240, Number(preferences.listWidth) || 320));
+      }
+      applyLayout();
+      const vault = await DB.getMeta(VAULT_META);
+      if (!vault || !vault.vaultId) {
+        showVaultDialog('setup');
+        return;
+      }
+      if (!vault.key) {
+        showVaultDialog('unlock');
+        return;
+      }
+      state.key = vault.key;
+      state.vaultId = vault.vaultId;
+      state.vaultReady = true;
+      await startNotes();
+    } catch (error) {
+      console.error(error);
+      showToast(`初始化失败：${error.message}`);
+    }
+  }
+
+  boot();
+})();
