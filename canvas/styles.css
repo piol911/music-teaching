@@ -2052,3 +2052,18 @@ body.compact .more-pop button{ flex-direction:column; justify-content:center; ga
 .lock-cta svg{ width:19px; height:19px; opacity:.9 }
 .lock-cta:hover{ background:rgba(255,255,255,.14) }
 .lock-cta:active{ transform:scale(.97) }
+
+/* 2026-11-08 重叠修复（自动扫描出来的） */
+/* ① 顶栏标题伸到居中缩放组底下 → 按缩放组宽度留出空间 */
+@media (min-width: 901px){
+  .topbar .board-title-wrap{ max-width: calc(50vw - 235px); min-width: 0 }
+}
+/* ② 视图列表面板底部压住工作条（bar 高 58 + 底部 22 = 80） */
+.views-panel{ bottom: calc(90px + var(--sab)) }
+@media (max-height: 460px){ .views-panel{ bottom: calc(82px + var(--sab)) } }
+
+/* 修正上一版：不动 flex 容器（会挤走右侧那组），只限制输入框本身 */
+@media (min-width: 901px){
+  .topbar .board-title-wrap{ max-width: none }
+  .topbar .board-name{ max-width: clamp(180px, calc(50vw - 250px), 420px) }
+}

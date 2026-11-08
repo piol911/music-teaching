@@ -2637,20 +2637,21 @@ $('#btnMiniFold').addEventListener('click', e => {
     const items = [...document.querySelectorAll('#toolbar .tool[data-tool]')]
       .filter(b => !shown(b))
       .map(b => ({
-        sel: `#toolbar .tool[data-tool="${b.dataset.tool}"]`,
+        tool: b.dataset.tool,
         label: (b.getAttribute('title') || b.dataset.tool).replace(/\s*[（(][^）)]*[)）]\s*/g, ''),
         icon: b.innerHTML,
         on: b.classList.contains('active'),
       }));
     /* 手机上的「记录视图 / 演示」也会被收起，一并放进菜单 */
-    [['#btnAddView', '记录视图'], ['#btnPlay', '演示']].forEach(([sel, label]) => {
-      const el = $(sel);
-      if (el && !shown(el)) items.push({ sel, label, icon: el.innerHTML, on: false });
+    [['btnAddView', '记录视图'], ['btnPlay', '演示']].forEach(([elId, label]) => {
+      const el = document.getElementById(elId);
+      if (el && !shown(el)) items.push({ el: elId, label, icon: el.innerHTML, on: false });
     });
     if (!items.length) { close(); return; }
-    pop.innerHTML = items.map(it =>
-      `<button data-src="${it.sel}" class="${it.on ? 'on' : ''}">${it.icon}<span>${it.label}</span></button>`
-    ).join('');
+    pop.innerHTML = items.map(it => {
+      const attr = it.tool ? `data-tool="${it.tool}"` : `data-el="${it.el}"`;
+      return `<button ${attr} class="${it.on ? 'on' : ''}">${it.icon}<span>${it.label}</span></button>`;
+    }).join('');
     pop.classList.add('show');
     btn.classList.add('on');
     const r = btn.getBoundingClientRect();
@@ -2663,9 +2664,11 @@ $('#btnMiniFold').addEventListener('click', e => {
     pop.classList.contains('show') ? close() : open();
   });
   pop.addEventListener('click', e => {
-    const b = e.target.closest('button[data-src]');
+    const b = e.target.closest('button[data-tool],button[data-el]');
     if (!b) return;
-    const src = document.querySelector(b.dataset.src);
+    const src = b.dataset.tool
+      ? document.querySelector(`#toolbar .tool[data-tool="${b.dataset.tool}"]`)
+      : document.getElementById(b.dataset.el);
     close();
     if (src) src.click();          // 复用原来的逻辑，不重复实现
   });
