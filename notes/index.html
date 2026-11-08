@@ -153,11 +153,10 @@
       <p class="modal-copy" id="vaultDialogCopy">笔记会在本机加密。换设备时输入同一个口令，就能解密同一份笔记库。</p>
       <label class="field">
         <span>笔记口令</span>
-        <input id="vaultPassword" type="password" minlength="10" autocomplete="current-password" required placeholder="至少 10 个字符">
-      </label>
-      <label class="field" id="confirmField">
-        <span>再输入一次</span>
-        <input id="vaultPasswordConfirm" type="password" minlength="10" autocomplete="new-password" placeholder="再输入一次">
+        <span class="pw-wrap">
+          <input id="vaultPassword" type="password" minlength="10" autocomplete="current-password" required placeholder="至少 10 个字符">
+          <button type="button" class="pw-eye" data-eye="vaultPassword" aria-label="显示或隐藏口令">显示</button>
+        </span>
       </label>
       <p class="security-note">口令不会上传。忘记后无法恢复笔记库，请妥善保存。</p>
       <button class="modal-primary" id="vaultSubmitBtn" type="submit">开始使用</button>
@@ -172,7 +171,10 @@
       <p class="modal-copy">输入同一个笔记口令完成登录。正文会在浏览器中加密；登录令牌在本机保留 12 小时，方便手机离线编辑后自动补同步。</p>
       <label class="field">
         <span>笔记口令</span>
-        <input id="syncPassword" type="password" minlength="10" autocomplete="current-password" required placeholder="仅用于派生登录凭据">
+        <span class="pw-wrap">
+          <input id="syncPassword" type="password" minlength="10" autocomplete="current-password" required placeholder="输入笔记口令">
+          <button type="button" class="pw-eye" data-eye="syncPassword" aria-label="显示或隐藏口令">显示</button>
+        </span>
       </label>
       <p class="sync-error" id="syncError"></p>
       <button class="modal-primary" id="syncSubmitBtn" type="submit">连接并同步</button>

@@ -629,9 +629,22 @@
     showToast('笔记已移到删除记录');
   }
 
+
+  /* 显示/隐藏口令：看得见就不容易输错，比让用户重复输两遍靠谱 */
+  document.addEventListener('click', e => {
+    const btn = e.target.closest('.pw-eye');
+    if (!btn) return;
+    const input = document.getElementById(btn.dataset.eye);
+    if (!input) return;
+    const show = input.type === 'password';
+    input.type = show ? 'text' : 'password';
+    btn.textContent = show ? '隐藏' : '显示';
+    input.focus();
+  });
+
   async function setupVault(password, confirmation) {
     if (!password || password.length < 10) throw new Error('笔记库口令至少需要 10 个字符');
-    if (!state.unlockOnly && password !== confirmation) throw new Error('两次输入的口令不一致');
+    // 「再输入一次」已去掉：口令框自带「显示」按钮，看得见就不会输错
     refs.vaultSubmitBtn.disabled = true;
     refs.vaultSubmitBtn.textContent = '正在建立加密笔记库…';
     try {
@@ -671,7 +684,7 @@
       refs.vaultSubmitBtn.disabled = false;
       refs.vaultSubmitBtn.textContent = state.unlockOnly ? '解锁' : '开始使用';
       refs.vaultPassword.value = '';
-      refs.vaultPasswordConfirm.value = '';
+      if (refs.vaultPasswordConfirm) if (refs.vaultPasswordConfirm) refs.vaultPasswordConfirm.value = '';
     }
   }
 
@@ -919,7 +932,7 @@
           state.unlockOnly = false;
           refs.vaultDialogTitle.textContent = '口令可能不对';
           refs.vaultDialogCopy.textContent = `云端有 ${st.fetched} 条笔记，用当前口令打不开。请重新输入「当初写入这些笔记时用的」那个口令；确认后会用它替换当前口令。`;
-          refs.confirmField.hidden = true;
+          if (refs.confirmField) refs.confirmField.hidden = true;
           refs.vaultSubmitBtn.textContent = '用这个口令重试';
           refs.vaultDialog.showModal();
           setTimeout(() => refs.vaultPassword.focus(), 100);
@@ -953,7 +966,7 @@
       state.unlockOnly = false;
       refs.vaultDialogTitle.textContent = '设置笔记口令';
       refs.vaultDialogCopy.textContent = '这台设备还没有笔记口令。设一个好记的（10 个字符以上，比如一句话），它同时是加密密钥和登录口令；换设备输入同一个即可。';
-      refs.confirmField.hidden = false;
+      if (refs.confirmField) refs.confirmField.hidden = false;
       refs.vaultSubmitBtn.textContent = '开始使用';
       refs.vaultDialog.showModal();
       setTimeout(() => refs.vaultPassword.focus(), 100);
@@ -1308,11 +1321,11 @@
     refs.vaultDialogCopy.textContent = state.unlockOnly
       ? '输入这台设备使用的笔记口令，解密本地笔记并恢复同步会话。'
       : '笔记会在本机加密。换设备时输入同一个口令，就能解密同一份笔记库。';
-    refs.confirmField.hidden = state.unlockOnly;
+    if (refs.confirmField) refs.confirmField.hidden = state.unlockOnly;
     refs.vaultPassword.placeholder = state.unlockOnly ? '输入现有笔记口令' : '至少 10 个字符';
     refs.vaultSubmitBtn.textContent = state.unlockOnly ? '解锁' : '开始使用';
     refs.vaultPassword.value = '';
-    refs.vaultPasswordConfirm.value = '';
+    if (refs.vaultPasswordConfirm) if (refs.vaultPasswordConfirm) refs.vaultPasswordConfirm.value = '';
     refs.vaultDialog.showModal();
     setTimeout(() => refs.vaultPassword.focus(), 100);
   }
@@ -1553,7 +1566,7 @@
       event.preventDefault();
       setupVault(refs.vaultPassword.value, refs.vaultPasswordConfirm.value).catch(error => {
         showToast(error.message);
-        refs.vaultPasswordConfirm.value = '';
+        if (refs.vaultPasswordConfirm) if (refs.vaultPasswordConfirm) refs.vaultPasswordConfirm.value = '';
       });
     });
     refs.vaultCloseBtn.addEventListener('click', () => {
