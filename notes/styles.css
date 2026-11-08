@@ -1391,3 +1391,14 @@ kbd {
 @media (max-width: 900px){
   .mobile-back{ display: none !important }
 }
+
+/* 手机上工作区必须是单列：否则编辑区隐藏后仍会留出一条空列 */
+@media (max-width: 900px){
+  .workspace{ grid-template-columns: minmax(0, 1fr) !important; }
+  .list-pane{ grid-column: 1 / -1 !important; width: 100%; border-right: 0; }
+  .editor-pane{ grid-column: 1 / -1 !important; }
+  .bottom-bar{ width: 100%; max-width: 100vw; }
+}
+
+/* 手机上齿轮只在底栏，顶栏那个重复的隐藏 */
+@media (max-width: 900px){ #gearBtn{ display: none } }

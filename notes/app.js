@@ -1264,7 +1264,7 @@
     if (officeLoading) return officeLoading;
     officeLoading = new Promise((resolve, reject) => {
       const script = document.createElement('script');
-      script.src = 'office-preview.bundle.js?v=20261109e';
+      script.src = 'office-preview.bundle.js?v=20261109f';
       script.onload = () => resolve();
       script.onerror = () => { officeLoading = null; reject(new Error('预览组件下载失败')); };
       document.head.appendChild(script);
