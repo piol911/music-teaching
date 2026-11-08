@@ -32,6 +32,7 @@
     noteList: $('#noteList'),
     allCount: $('#allCount'),
     folderTree: $('#folderTree'),
+    folderInput: $('#folderInput'),
     tagCloud: $('#tagCloud'),
     importBtn: $('#importBtn'),
     exportBtn: $('#exportBtn'),
@@ -526,6 +527,7 @@
 
     const ordered = Core.searchNotes(state.notes, '', '', '');
     const noteNumber = ordered.findIndex(item => item.id === note.id) + 1;
+    if (refs.folderInput) refs.folderInput.value = note.folder || '';
     if (refs.noteOrdinal) refs.noteOrdinal.textContent = `NOTE ${String(Math.max(1, noteNumber)).padStart(2, '0')}`;
     if (refs.noteDateKicker) refs.noteDateKicker.textContent = new Intl.DateTimeFormat('zh-CN', {
       year: 'numeric',
@@ -1227,7 +1229,7 @@
     if (officeLoading) return officeLoading;
     officeLoading = new Promise((resolve, reject) => {
       const script = document.createElement('script');
-      script.src = 'office-preview.bundle.js?v=20261109c';
+      script.src = 'office-preview.bundle.js?v=20261109d';
       script.onload = () => resolve();
       script.onerror = () => { officeLoading = null; reject(new Error('预览组件下载失败')); };
       document.head.appendChild(script);
@@ -1583,6 +1585,19 @@
       renderList();
     });
     refs.titleInput.addEventListener('input', updateFromInputs);
+    if (refs.folderInput) {
+      refs.folderInput.addEventListener('change', () => {
+        const note = activeNote();
+        if (!note) return;
+        note.folder = Core.normalizeFolder(refs.folderInput.value);
+        refs.folderInput.value = note.folder;
+        noteChanged(note);
+        scheduleSave();
+        renderList();
+        renderFolderTree();
+        scheduleSync(600);
+      });
+    }
 
 
     /* 文件夹树：点名字=筛选，点箭头=展开/收起 */
