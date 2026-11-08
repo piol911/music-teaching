@@ -8,7 +8,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>Canvas · 无边画布</title>
-<link rel="stylesheet" href="styles.css?v=1794116923">
+<link rel="stylesheet" href="styles.css?v=1794121324">
 </head>
 <body>
 
@@ -140,9 +140,6 @@
   <button class="tool active" data-tool="select" title="选择 (V)">
     <svg viewBox="0 0 24 24"><path d="M5 3l14 8-6 1.5L10 19z"/></svg>
   </button>
-  <button class="tool" data-tool="pan" title="平移 (H / 按住空格)">
-    <svg viewBox="0 0 24 24"><path d="M9 11V5.5a1.5 1.5 0 013 0V11m0-1V4.5a1.5 1.5 0 013 0V11m0-1.5a1.5 1.5 0 013 0V15a6 6 0 01-6 6h-1a6 6 0 01-6-6v-3.5a1.5 1.5 0 013 0V13"/></svg>
-  </button>
   <span class="tb-div"></span>
   <button class="tool" data-tool="note" title="便签 (N)">
     <svg viewBox="0 0 24 24"><path d="M5 4h14v10l-5 5H5z"/><path d="M19 14h-5v5"/></svg>
@@ -262,13 +259,13 @@
   <div class="modal glass wide" id="helpModal">
     <h3>操作方式</h3>
     <div class="help-grid">
-      <div><kbd>空格</kbd> / <kbd>中键</kbd> / <kbd>右键</kbd> 拖拽</div><span>平移画布（三种都行）</span>
+      <div><kbd>拖空白</kbd> / <kbd>空格</kbd> / <kbd>右键</kbd></div><span>平移画布（拖动空白处就是平移）</span>
       <div><kbd>滚轮</kbd></div><span>以光标为中心缩放</span>
       <div><kbd>⌘</kbd> + 滚轮 / 捏合</div><span>精细缩放</span>
       <div><kbd>双击</kbd> 元素</div><span>聚焦 / 编辑</span>
       <div><kbd>双击</kbd> 空白</div><span>退出聚焦</span>
       <div><kbd>1</kbd></div><span>适应全部</span>
-      <div><kbd>V</kbd> <kbd>H</kbd> <kbd>N</kbd> <kbd>T</kbd></div><span>选择 / 平移 / 便签 / 文本</span>
+      <div><kbd>V</kbd> <kbd>N</kbd> <kbd>T</kbd></div><span>选择 / 便签 / 文本</span>
       <div><kbd>I</kbd> <kbd>B</kbd> <kbd>P</kbd> <kbd>E</kbd></div><span>图片 / 视频 / 画笔 / 橡皮</span>
       <div><kbd>⌘C</kbd> <kbd>⌘V</kbd> <kbd>⌘D</kbd></div><span>复制 / 粘贴 / 再制</span>
       <div><kbd>⌘Z</kbd> <kbd>⌘⇧Z</kbd></div><span>撤销 / 重做</span>
@@ -325,6 +322,6 @@
 
 <input type="file" id="fileInput" accept="image/*" multiple hidden>
 
-<script src="app.js?v=1794116923"></script>
+<script src="app.js?v=1794121324"></script>
 </body>
 </html>

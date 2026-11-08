@@ -1368,6 +1368,10 @@ let spaceDown = false;
 const touchPts = new Map();
 let pinch = null;
 
+/* 只有两指「明显张开/收拢」才当缩放：手掌误触两点的距离几乎不变，
+   以前这种情况会一边平移一边缩放，看着像整页在放大 */
+let pinchArmed = false;
+
 function startPinch() {
   if (touchPts.size < 2) return;
   // 第二指落下：取消单指正在进行的操作（拖拽 / 框选 / 画笔）
@@ -1376,6 +1380,7 @@ function startPinch() {
   document.body.classList.remove('dragging');
   cancelCamAnim();
   const [a, b] = [...touchPts.values()];
+  pinchArmed = false;
   pinch = {
     dist: Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)),
     mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2,
@@ -1392,6 +1397,9 @@ function updatePinch() {
   const [a, b] = [...touchPts.values()];
   const dist = Math.max(1, Math.hypot(a.x - b.x, a.y - b.y));
   const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+  /* 距离变化超过 6% 才认作缩放，避免双指抖动/掌缘误触 */
+  if (!pinchArmed && Math.abs(dist / pinch.dist - 1) < 0.06) return;
+  pinchArmed = true;
   const s0 = pinch.cam.scale;
   const s1 = clamp(s0 * (dist / pinch.dist), MIN_SCALE, MAX_SCALE);
   // 按下时中点对应的世界点，始终跟随当前中点
@@ -1405,12 +1413,16 @@ function updatePinch() {
 
 stage.addEventListener('pointerdown', e => {
   if (e.pointerType !== 'touch') return;
-  touchPts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  /* 丢掉过期的触点：pointerup 有时收不到（手指滑出窗口/被系统接管），
+     残留一个点会和新手指凑成「两指」，于是单指拖动画布就变成缩放。 */
+  const now = Date.now();
+  for (const [id, p] of [...touchPts]) if (now - (p.t || 0) > 8000) touchPts.delete(id);
+  touchPts.set(e.pointerId, { x: e.clientX, y: e.clientY, t: now });
   if (touchPts.size === 2) startPinch();
 });
 window.addEventListener('pointermove', e => {
   if (e.pointerType !== 'touch' || !touchPts.has(e.pointerId)) return;
-  touchPts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  touchPts.set(e.pointerId, { x: e.clientX, y: e.clientY, t: Date.now() });
   if (pinch) updatePinch();
 }, { passive: true });
 ['pointerup', 'pointercancel'].forEach(t => window.addEventListener(t, e => {
@@ -1418,6 +1430,13 @@ window.addEventListener('pointermove', e => {
   touchPts.delete(e.pointerId);
   if (touchPts.size < 2) endPinch();
 }));
+
+/* Safari 的页面级捏合缩放会连 UI 一起放大缩小，和画布缩放打架，直接关掉 */
+['gesturestart', 'gesturechange', 'gestureend'].forEach(t =>
+  document.addEventListener(t, e => e.preventDefault(), { passive: false }));
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) { touchPts.clear(); pinch = null; }
+});
 
 stage.addEventListener('pointerdown', onDown);
 
@@ -1482,12 +1501,12 @@ function onDown(e) {
   if (panMode) { startPan(e); return; }
 
   if (state.tool === 'select') {
-    // 触屏上单指拖空白更自然的是平移（框选留给桌面鼠标）
-    // ⚠️ 但点空白必须先把选中清掉，否则选中框会一直挂着、没法再选别的
-    // 聚焦/沉浸时，点一下空白先退出（触屏也要能这样退）
+    // 「选择」一个工具就够：空白处拖动 = 平移画布（鼠标和手指一致），
+    // 按住 Shift 拖动 = 框选。不再需要单独的「平移」工具。
     if (state.focusId || state.immersive) { exitFocus(); return; }
-    if (e.pointerType === 'touch') { clearSelection(); startPan(e); return; }
-    startMarquee(e);
+    if (e.shiftKey) { startMarquee(e); return; }
+    clearSelection();
+    startPan(e);
     return;
   }
 
@@ -1864,7 +1883,7 @@ window.addEventListener('keydown', e => {
     }
     case 'l': case 'L': setTool('link'); break;
     case 'v': case 'V': setTool('select'); break;
-    case 'h': case 'H': setTool('pan'); break;
+    case 'h': case 'H': setTool('select'); break;   // 平移已并入选择
     case 'n': case 'N': setTool('note'); break;
     case 't': case 'T': setTool('text'); break;
     case 'i': case 'I': setTool('image'); openImage(); break;
