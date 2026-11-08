@@ -45,15 +45,8 @@ body::after{
   transition:color .25s,border-color .25s,background .25s;
   text-decoration:none;
 }
+.hd-acts .notes-link{text-decoration:none;display:inline-flex;align-items:center;line-height:1}
 .lockBtn:hover,.edit:hover{color:var(--ink);border-color:rgba(243,241,236,.45);background:rgba(255,255,255,.09)}
-.notes-shortcut{
-  position:fixed;z-index:260;top:22px;right:22px;
-  appearance:none;border:1px solid rgba(243,241,236,.3);background:rgba(11,11,12,.82);
-  color:var(--ink);font:inherit;font-size:12px;letter-spacing:.08em;
-  padding:9px 14px;border-radius:999px;text-decoration:none;
-  backdrop-filter:blur(10px);
-}
-.notes-shortcut:hover{color:#fff;border-color:var(--accent);background:rgba(226,35,26,.16)}
 .edit[aria-pressed="true"]{color:#fff;background:var(--accent);border-color:var(--accent)}
 
 .head{margin-top:clamp(26px,6vw,64px);max-width:52em}
@@ -199,7 +192,6 @@ footer .dot{width:3px;height:3px;border-radius:50%;background:var(--faint)}
 </head>
 <body>
 
-<a class="notes-shortcut" href="notes/">笔记</a>
 
 <div class="lock" id="lock" role="dialog" aria-modal="true" aria-labelledby="lockTitle">
   <div class="lock-hd">
@@ -215,6 +207,7 @@ footer .dot{width:3px;height:3px;border-radius:50%;background:var(--faint)}
   <header class="masthead">
     <span class="mark">XY<i>.</i>6300</span>
     <span class="hd-acts">
+      <a class="lockBtn notes-link" href="notes/">笔记</a>
       <button class="lockBtn" id="lockMgr">图案密码</button>
       <button class="edit" id="editBtn" aria-pressed="false">编辑</button>
     </span>
