@@ -118,6 +118,7 @@
     syncQueued: false,
     vaultReady: false,
     syncManual: false,
+    pendingCloudCount: 0,
     unlockOnly: false,
     editor: null,
     attachmentUrls: new Map(),
@@ -545,6 +546,9 @@
       }
     };
     walk(root, 0);
+    if (!root.children.size) {
+      rows.push('<div class="list-hint">还没有文件夹。点开任意一篇笔记，标题下方有「位置」，填 <b>100-工作/教学</b> 这样就会自动分组。</div>');
+    }
     refs.noteList.innerHTML = rows.join('');
   }
 
@@ -749,6 +753,8 @@
         state.vaultResetAllowed = false;
         state.notes = [];
         state.activeId = '';
+        state.pendingCloudCount = 0;
+        setTimeout(() => { state.syncManual = true; scheduleSync(300); }, 800);
       }
       state.key = derived.key;
       state.vaultId = derived.vaultId;
@@ -1021,18 +1027,12 @@
         // 情况 B：正常
         showToast(`同步完成：云端 ${st.fetched} 条已全部同步`);
       } else if (st.applied === 0 && st.failed > 0) {
-        // 情况 C：云端有内容，但一条都解不开 —— 口令不对
+        /* 云端有内容但一条都解不开：不是故障，是「这台设备现在的口令」和「当初写入的口令」不同。
+           给一句说明 + 一个可操作入口，别弹成报错。 */
         state.vaultResetAllowed = true;
-        showToast(`⚠️ 云端有 ${st.fetched} 条笔记，但当前口令一条都解不开 —— 口令很可能不对`, 6000);
-        setTimeout(() => {
-          state.unlockOnly = false;
-          refs.vaultDialogTitle.textContent = '口令可能不对';
-          refs.vaultDialogCopy.textContent = `云端有 ${st.fetched} 条笔记，用当前口令打不开。请重新输入「当初写入这些笔记时用的」那个口令；确认后会用它替换当前口令。`;
-          if (refs.confirmField) refs.confirmField.hidden = true;
-          refs.vaultSubmitBtn.textContent = '用这个口令重试';
-          refs.vaultDialog.showModal();
-          setTimeout(() => refs.vaultPassword.focus(), 100);
-        }, 500);
+        state.pendingCloudCount = st.fetched;
+        setSyncState('local', '口令待确认');
+        showToast(`云端有 ${st.fetched} 条笔记，当前口令打不开`, 5000);
       } else if (manual) {
         showToast(`同步完成：云端 ${st.fetched} 条，解开 ${st.applied} 条，${st.failed} 条解不开`);
       }
@@ -1264,7 +1264,7 @@
     if (officeLoading) return officeLoading;
     officeLoading = new Promise((resolve, reject) => {
       const script = document.createElement('script');
-      script.src = 'office-preview.bundle.js?v=20261109f';
+      script.src = 'office-preview.bundle.js?v=20261109g';
       script.onload = () => resolve();
       script.onerror = () => { officeLoading = null; reject(new Error('预览组件下载失败')); };
       document.head.appendChild(script);
@@ -1699,6 +1699,17 @@
 
     refs.syncBtn.addEventListener('click', async () => {
       state.syncManual = true;
+      /* 云端有内容但当前口令解不开：点同步就是「换个口令试试」 */
+      if (state.pendingCloudCount) {
+        state.unlockOnly = false;
+        refs.vaultDialogTitle.textContent = '换一个口令试试';
+        refs.vaultDialogCopy.textContent = `云端有 ${state.pendingCloudCount} 条笔记，用现在的口令打不开。请输入当初写这些笔记时用的那个口令。`;
+        if (refs.confirmField) refs.confirmField.hidden = true;
+        refs.vaultSubmitBtn.textContent = '用这个口令试试';
+        refs.vaultDialog.showModal();
+        setTimeout(() => refs.vaultPassword.focus(), 100);
+        return;
+      }
       if (readSession()) { syncNow(); return; }
       // 本机有登录凭据就直接连，不再逼用户重输口令
       const meta = await DB.getMeta(VAULT_META).catch(() => null);

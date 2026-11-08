@@ -1402,3 +1402,34 @@ kbd {
 
 /* 手机上齿轮只在底栏，顶栏那个重复的隐藏 */
 @media (max-width: 900px){ #gearBtn{ display: none } }
+
+/* 「位置」做成看得出来的胶囊，别让它消失在标题下面 */
+.folder-path{
+  display: inline-flex; align-items: center; gap: 6px;
+  margin: 10px 0 2px;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--paper-deep);
+  font-size: 12.5px; color: var(--text-2);
+  max-width: 100%;
+}
+.folder-path span{ flex: none; color: var(--text-3) }
+.folder-path input{
+  flex: 1; min-width: 90px;
+  border: 0; background: transparent;
+  font: inherit; font-size: 12.5px; color: var(--text);
+  padding: 0;
+}
+.folder-path input::placeholder{ color: var(--text-3) }
+.folder-path:focus-within{ border-color: var(--accent); background: #fff }
+
+.list-hint{
+  margin: 14px 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--paper-deep);
+  color: var(--text-2);
+  font-size: 12px; line-height: 1.6;
+}
+.list-hint b{ color: var(--text); font-weight: 600 }
