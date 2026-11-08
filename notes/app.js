@@ -653,7 +653,14 @@
       state.vaultReady = true;
       state.unlockOnly = false;
       refs.vaultDialog.close();
+      const pending = state.notes || [];      // 设口令前内存里可能已经写了几条
       await startNotes();
+      if (pending.length && !state.notes.length) {
+        state.notes = pending.map(normalizeNote);
+        for (const note of state.notes) await DB.putNote(state.key, Crypto, note);
+        renderAll();
+        showToast(`已把 ${state.notes.length} 条笔记存进加密笔记库`);
+      }
     } finally {
       refs.vaultSubmitBtn.disabled = false;
       refs.vaultSubmitBtn.textContent = state.unlockOnly ? '解锁' : '开始使用';
@@ -876,6 +883,19 @@
   }
 
   async function connectCloud(password) {
+    /* 这台设备还没建加密笔记库：不是口令错，是还没有口令。
+       直接把人带去「设置口令」，别再丢一句看不懂的报错。 */
+    if (!state.vaultId) {
+      refs.syncDialog.close();
+      state.unlockOnly = false;
+      refs.vaultDialogTitle.textContent = '设置笔记口令';
+      refs.vaultDialogCopy.textContent = '这台设备还没有笔记口令。设一个好记的（10 个字符以上，比如一句话），它同时是加密密钥和登录口令；换设备输入同一个即可。';
+      refs.confirmField.hidden = false;
+      refs.vaultSubmitBtn.textContent = '开始使用';
+      refs.vaultDialog.showModal();
+      setTimeout(() => refs.vaultPassword.focus(), 100);
+      return;
+    }
     refs.syncSubmitBtn.disabled = true;
     refs.syncSubmitBtn.textContent = '正在验证…';
     refs.syncError.textContent = '';
