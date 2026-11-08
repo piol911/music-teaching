@@ -274,6 +274,7 @@ footer .dot{width:3px;height:3px;border-radius:50%;background:var(--faint)}
    现在的顺序是：本机快照（离线也能看）→ 解锁后从云端拉取（同一空间码多设备同步）
    ============================================================ */
 const CLOUD_API = 'https://art-d9giyyspp3921f818-1312774719.ap-shanghai.app.tcloudbase.com/sync';
+const TRUST_LS = 'canvas.trust';      // 与画布共用：解锁一次，两边都免登录
 const CODE_LS = 'xy6300.portal.code';
 const LINKS_LS = 'xy6300.portal.links';
 
@@ -668,6 +669,7 @@ function closeLock() {
   document.body.style.overflow = '';
   chain = []; firstSeq = null;
   try { sessionStorage.setItem(UNLOCK_SS, '1'); } catch (e) { /* 忽略 */ }
+  try { localStorage.setItem(TRUST_LS, String(Date.now() + 30 * 864e5)); } catch (e) { /* 忽略 */ }
   startSync();          // 解锁后才去取列表（锁着的时候不发任何请求）
 }
 
@@ -790,9 +792,10 @@ function startSync() {
   pullRetry().then(() => { if (presetJustInstalled) push(); });
 }
 (function bootLock() {
-  let unlocked = false;
+  let unlocked = false, trusted = false;
   try { unlocked = sessionStorage.getItem(UNLOCK_SS) === '1'; } catch (e) { /* 忽略 */ }
-  if (lockCfg && !unlocked) openLock('check', '按顺序点击符号解锁');   // 锁着就先不同步
+  try { trusted = (+localStorage.getItem(TRUST_LS) || 0) > Date.now(); } catch (e) { /* 忽略 */ }
+  if (lockCfg && !unlocked && !trusted) openLock('check', '按顺序点击符号解锁');   // 锁着就先不同步
   else startSync();
 })();
 document.addEventListener('visibilitychange', () => { if (!document.hidden) startSync(); });

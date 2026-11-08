@@ -4029,11 +4029,13 @@ function openLockScreen(s, msg) {
   $('#lockTitle').textContent = s === 'manage' ? '图案密码' : '我的画布';
   setLockMsg(msg);
   lockRefresh();
+  syncPasskeyBtn();
 }
 function closeLockScreen() {
   lockEl.classList.remove('on');
   lockChain = []; lockFirst = null;
   try { sessionStorage.setItem(UNLOCK_SS, '1'); } catch (e) { /* 忽略 */ }
+  trustThisDevice();                            // 这台设备 30 天内不再问
   if (REMOTE) { startRemoteMode(); return; }   // 遥控模式不需要载入画布内容
   if (!lib.ready) libBoot().catch(err => { console.warn('目录载入失败', err); });
 }
@@ -4064,6 +4066,107 @@ $('#marks').addEventListener('click', e => {
   const b = e.target.closest('.mark-t');
   if (b) lockTap(+b.dataset.i);
 });
+/* ============================================================
+   更顺手的解锁：本机信任（30 天） + 面容 / 指纹（Passkey）
+   —— 说明：这两样都只是「省事」，验证仍在前端，和图案密码同一级别；
+      真要防人，得把数据放到服务端做校验。
+   ============================================================ */
+const TRUST_LS = 'canvas.trust';
+const PASSKEY_LS = 'canvas.passkey';
+
+function deviceTrusted() {
+  try { return (+localStorage.getItem(TRUST_LS) || 0) > Date.now(); } catch (e) { return false; }
+}
+function trustThisDevice() {
+  try { localStorage.setItem(TRUST_LS, String(Date.now() + 30 * 864e5)); } catch (e) { /* 忽略 */ }
+}
+function forgetThisDevice() {
+  try { localStorage.removeItem(TRUST_LS); sessionStorage.removeItem(UNLOCK_SS); } catch (e) { /* 忽略 */ }
+}
+
+const b64u = buf => btoa(String.fromCharCode(...new Uint8Array(buf)))
+  .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+function ub64u(str) {
+  const t = str.replace(/-/g, '+').replace(/_/g, '/');
+  const bin = atob(t + '='.repeat((4 - t.length % 4) % 4));
+  return Uint8Array.from(bin, c => c.charCodeAt(0));
+}
+function passkeyRec() {
+  try { return JSON.parse(localStorage.getItem(PASSKEY_LS) || 'null'); } catch (e) { return null; }
+}
+function passkeyOK() {
+  return !!(window.isSecureContext && window.PublicKeyCredential && navigator.credentials);
+}
+function syncPasskeyBtn() {
+  const b = $('#btnPasskey');
+  if (b) b.hidden = !(passkeyOK() && passkeyRec());
+  const row = $('#btnPasskeySetup');
+  if (row) row.textContent = passkeyRec() ? '已开启 · 点此取消' : (passkeyOK() ? '添加' : '需 HTTPS');
+}
+
+async function passkeyAdd() {
+  if (!passkeyOK()) { showToast('需要 https 才能用面容 / 指纹'); return; }
+  try {
+    const cred = await navigator.credentials.create({ publicKey: {
+      challenge: crypto.getRandomValues(new Uint8Array(32)),
+      rp: { name: 'XY6300 无边画布' },
+      user: {
+        id: crypto.getRandomValues(new Uint8Array(16)),
+        name: 'xy6300', displayName: 'XY6300',
+      },
+      pubKeyCredParams: [{ type: 'public-key', alg: -7 }, { type: 'public-key', alg: -257 }],
+      authenticatorSelection: {
+        authenticatorAttachment: 'platform',
+        userVerification: 'required',
+        residentKey: 'preferred',
+      },
+      timeout: 60000,
+    } });
+    localStorage.setItem(PASSKEY_LS, JSON.stringify({ id: b64u(cred.rawId), at: Date.now() }));
+    syncPasskeyBtn();
+    showToast('已开启：下次直接刷脸 / 按指纹');
+  } catch (e) {
+    showToast('没有添加成功：' + (e && e.name === 'NotAllowedError' ? '操作被取消' : '这台设备不支持'));
+  }
+}
+
+async function passkeyUse() {
+  const rec = passkeyRec();
+  if (!rec || !passkeyOK()) return false;
+  try {
+    const a = await navigator.credentials.get({ publicKey: {
+      challenge: crypto.getRandomValues(new Uint8Array(32)),
+      allowCredentials: [{ type: 'public-key', id: ub64u(rec.id) }],
+      userVerification: 'required',
+      timeout: 60000,
+    } });
+    if (!a || b64u(a.rawId) !== rec.id) { setLockMsg('这把钥匙对不上，用图案解锁吧', true); return false; }
+    setLockMsg('好');
+    setTimeout(closeLockScreen, 200);
+    return true;
+  } catch (e) {
+    setLockMsg(e && e.name === 'NotAllowedError' ? '取消了，也可以用图案解锁' : '解锁失败，请用图案', true);
+    return false;
+  }
+}
+
+$('#btnPasskey') && $('#btnPasskey').addEventListener('click', passkeyUse);
+$('#btnPasskeySetup') && $('#btnPasskeySetup').addEventListener('click', async () => {
+  if (passkeyRec()) {
+    try { localStorage.removeItem(PASSKEY_LS); } catch (e) { /* 忽略 */ }
+    syncPasskeyBtn();
+    showToast('已取消面容 / 指纹解锁');
+  } else {
+    await passkeyAdd();
+  }
+});
+$('#btnLockNow') && $('#btnLockNow').addEventListener('click', () => {
+  forgetThisDevice();
+  showToast('已锁定，下次需要重新解锁');
+  setTimeout(() => location.reload(), 600);
+});
+syncPasskeyBtn();
+
 $('#lockActs').addEventListener('click', e => {
   const b = e.target.closest('button');
   if (!b || b.disabled) return;
@@ -4081,7 +4184,7 @@ $('#lockActs').addEventListener('click', e => {
 function lockNeeded() {
   let u = false;
   try { u = sessionStorage.getItem(UNLOCK_SS) === '1'; } catch (e) { /* 忽略 */ }
-  return !!lockCfg && !u;
+  return !!lockCfg && !u && !deviceTrusted();   // 这台设备信任过就免登录
 }
 
 /* ---------------- 动效质量档位 ---------------- */

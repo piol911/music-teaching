@@ -8,7 +8,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>Canvas · 无边画布</title>
-<link rel="stylesheet" href="styles.css?v=1794110113">
+<link rel="stylesheet" href="styles.css?v=DEPLOY">
 </head>
 <body>
 
@@ -84,6 +84,8 @@
   <div class="set-div"></div>
   <div class="set-row" data-set="present"><span>演示模式</span><button class="set-go">进入演示</button></div>
   <div class="set-row" data-set="help"><span>操作方式</span><button class="set-go">查看说明</button></div>
+  <div class="set-row"><span>面容 / 指纹解锁</span><button class="set-go" id="btnPasskeySetup">添加</button></div>
+  <div class="set-row"><span>本机免登录</span><button class="set-go" id="btnLockNow">立即锁定</button></div>
 </div>
 
 
@@ -311,6 +313,10 @@
     <ul class="marks" id="marks"></ul>
     <div class="seq" id="seq" aria-hidden="true"></div>
     <div class="lock-acts" id="lockActs"></div>
+    <button class="lock-cta" id="btnPasskey" hidden>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M12 3a6 6 0 00-6 6v3M12 3a6 6 0 016 6v3"/><path d="M6 15v3a6 6 0 0012 0v-3"/><path d="M9 12v6M15 12v6"/></svg>
+      用面容 / 指纹解锁
+    </button>
   </div>
 </div>
 
@@ -319,6 +325,6 @@
 
 <input type="file" id="fileInput" accept="image/*" multiple hidden>
 
-<script src="app.js?v=1794110113"></script>
+<script src="app.js?v=DEPLOY"></script>
 </body>
 </html>
