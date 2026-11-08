@@ -1312,3 +1312,82 @@ kbd {
   border-bottom-color: var(--stroke);
   color: var(--text);
 }
+
+/* ---------- 列表里的文件夹树（Obsidian 式） ---------- */
+.tree-folder{
+  display: flex; align-items: center; gap: 6px;
+  width: 100%;
+  padding: 7px 10px;
+  border: 0; background: transparent;
+  color: var(--text-2);
+  font: inherit; font-size: 13px; font-weight: 600;
+  text-align: left; cursor: pointer;
+  border-bottom: 1px solid var(--line);
+}
+.tree-folder:hover{ background: var(--paper-deep) }
+.tf-arrow{
+  flex: none; width: 12px;
+  font-size: 9px; color: var(--text-3);
+  transition: transform .15s;
+}
+.tree-folder.open .tf-arrow{ transform: rotate(90deg) }
+.tf-name{ flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.tf-count{ flex: none; font-size: 11px; font-weight: 400; color: var(--text-3) }
+
+/* 去掉序号列，靠缩进表示层级 */
+.note-index{ display: none }
+
+/* ============ 底部工具栏（手机端主入口，取代零散的抽屉/返回） ============ */
+.bottom-bar{ display: none; }
+@media (max-width: 900px){
+  :root{ --bottombar-h: 56px }
+  .bottom-bar{
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    position: fixed; left: 0; right: 0; bottom: 0;
+    z-index: 70;
+    height: calc(var(--bottombar-h) + var(--sab));
+    padding-bottom: var(--sab);
+    background: var(--paper-deep);
+    border-top: 1px solid var(--line-strong);
+  }
+  .bottom-bar button{
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+    border: 0; background: transparent; cursor: pointer;
+    color: var(--text-2); font: inherit; font-size: 11px;
+  }
+  .bottom-bar button svg{
+    width: 20px; height: 20px; fill: none; stroke: currentColor;
+    stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round;
+  }
+  .bottom-bar button:active{ background: rgba(0,0,0,.05) }
+  .bottom-bar button.on{ color: var(--accent) }
+
+  /* 手机上不再有左侧抽屉：全部用底部栏 */
+  .sidebar{ display: none !important }
+  .mobile-backdrop{ display: none !important }
+  .menu-btn{ display: none }
+  .list-toggle-btn, .list-collapse-btn{ display: none }
+
+  /* 给底部栏留出空间 */
+  .workspace{ padding-bottom: calc(var(--bottombar-h) + var(--sab)) }
+  .editor-pane{ bottom: calc(var(--bottombar-h) + var(--sab)) }
+  .meta-hint, .side-tools{ /* 已移入工具面板 */ }
+}
+
+/* 工具面板里的按钮排布 */
+.tools-body{ display: flex; flex-direction: column; gap: 2px; margin-top: 10px }
+.tools-body .side-tools{ display: flex; flex-direction: column; gap: 2px; padding: 0 }
+.tools-body button, .tools-body a{
+  display: block; width: 100%;
+  padding: 12px 10px; border: 0; border-radius: 10px;
+  background: transparent; color: var(--text);
+  font: inherit; font-size: 14px; text-align: left; text-decoration: none;
+  cursor: pointer;
+}
+.tools-body button:hover, .tools-body a:hover{ background: var(--paper-deep) }
+
+/* 手机上不再需要编辑器里的返回箭头：底部栏「文件」就是唯一的返回 */
+@media (max-width: 900px){
+  .mobile-back{ display: none !important }
+}

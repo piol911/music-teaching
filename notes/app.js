@@ -486,32 +486,66 @@
     refs.listCount.textContent = String(notes.length);
     refs.listTitle.textContent = state.tag
       ? `#${state.tag}`
-      : (state.folder || '全部笔记');
+      : (state.query ? '搜索结果' : '全部笔记');
 
     if (!notes.length) {
       refs.noteList.innerHTML = `<div class="list-empty">${state.query ? '没有找到匹配的笔记' : '这里还没有笔记'}</div>`;
       return;
     }
 
-    refs.noteList.innerHTML = notes.map((note, index) => {
-      const snippet = note.body
-        .replace(/```[\s\S]*?```/g, ' ')
-        .replace(/[#>*_`\[\]]/g, ' ')
-        .replace(/\s+/g, ' ')
-        .trim()
-        .slice(0, 120) || '空白笔记';
-      return `<button class="note-row${note.id === state.activeId ? ' active' : ''}" type="button" data-id="${note.id}">
-        <span class="note-index" aria-hidden="true">${String(index + 1).padStart(2, '0')}</span>
+    /* ---------- 文件夹 + 笔记合成一棵树（参照 Obsidian） ---------- */
+    const root = { name: '', path: '', children: new Map(), notes: [] };
+    for (const note of notes) {
+      const path = Core.normalizeFolder(note.folder);
+      if (!path) { root.notes.push(note); continue; }
+      let node = root, acc = '';
+      for (const part of path.split('/')) {
+        acc = acc ? acc + '/' + part : part;
+        if (!node.children.has(part)) {
+          node.children.set(part, { name: part, path: acc, children: new Map(), notes: [] });
+        }
+        node = node.children.get(part);
+      }
+      node.notes.push(note);
+    }
+
+    const countIn = node => node.notes.length + [...node.children.values()].reduce((sum, c) => sum + countIn(c), 0);
+    const snippetOf = note => note.body
+      .replace(/```[\s\S]*?```/g, ' ')
+      .replace(/[#>*_`\[\]]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 120) || '空白笔记';
+
+    const rows = [];
+    const noteRow = (note, depth) => `<button class="note-row${note.id === state.activeId ? ' active' : ''}" type="button" data-id="${note.id}" style="padding-left:${14 + depth * 14}px">
         <span class="note-main">
           <span class="note-row-top">
             <span class="note-title">${Core.escapeHtml(note.title)}</span>
             <span class="note-time">${Core.formatRelativeTime(note.updatedAt, now())}</span>
           </span>
-          <span class="note-snippet">${Core.escapeHtml(snippet)}</span>
+          <span class="note-snippet">${Core.escapeHtml(snippetOf(note))}</span>
           ${note.tags.length ? `<span class="note-tags">${note.tags.slice(0, 4).map(tag => `<span>#${Core.escapeHtml(tag)}</span>`).join('')}</span>` : ''}
         </span>
       </button>`;
-    }).join('');
+
+    const walk = (node, depth) => {
+      const folders = [...node.children.values()].sort((a, b) => a.name.localeCompare(b.name, 'zh-Hans-CN'));
+      for (const folder of folders) {
+        const open = !state.collapsed.has(folder.path);
+        rows.push(`<button class="tree-folder${open ? ' open' : ''}" type="button" data-tree="${Core.escapeHtml(folder.path)}" style="padding-left:${8 + depth * 14}px">
+            <span class="tf-arrow">▶</span>
+            <span class="tf-name">${Core.escapeHtml(folder.name)}</span>
+            <span class="tf-count">${countIn(folder)}</span>
+          </button>`);
+        if (open) walk(folder, depth + 1);
+      }
+      for (const note of node.notes.slice().sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))) {
+        rows.push(noteRow(note, depth));
+      }
+    };
+    walk(root, 0);
+    refs.noteList.innerHTML = rows.join('');
   }
 
   function renderEditor() {
@@ -584,6 +618,7 @@
     state.activeId = note.id;
     DB.setMeta(ACTIVE_META, note.id).catch(() => {});
     document.body.classList.add('note-open');
+    const bbL = document.getElementById('bbList'); if (bbL) bbL.classList.remove('on');
     document.body.classList.remove('menu-open');
     refs.menuBtn.setAttribute('aria-expanded', String(window.innerWidth > 900 && !state.sidebarCollapsed));
     renderList();
@@ -1229,7 +1264,7 @@
     if (officeLoading) return officeLoading;
     officeLoading = new Promise((resolve, reject) => {
       const script = document.createElement('script');
-      script.src = 'office-preview.bundle.js?v=20261109d';
+      script.src = 'office-preview.bundle.js?v=20261109e';
       script.onload = () => resolve();
       script.onerror = () => { officeLoading = null; reject(new Error('预览组件下载失败')); };
       document.head.appendChild(script);
@@ -1527,6 +1562,41 @@
   function bindEvents() {
     const create = () => createNote();
     refs.sideNewBtn.addEventListener('click', create);
+
+    /* ---------- 底部工具栏（手机）+ 齿轮：只有一个入口，逻辑一致 ---------- */
+    const toolsDialog = document.getElementById('toolsDialog');
+    const toolsBody = document.getElementById('toolsBody');
+    const sideTools = document.querySelector('.sidebar .side-tools');
+    if (toolsBody && sideTools) toolsBody.appendChild(sideTools);   // 工具都收进齿轮
+    const openTools = () => { if (toolsDialog) toolsDialog.showModal(); };
+    const closeTools = () => { if (toolsDialog) toolsDialog.close(); };
+    const gearBtn = document.getElementById('gearBtn');
+    if (gearBtn) gearBtn.addEventListener('click', openTools);
+    const toolsCloseBtn = document.getElementById('toolsCloseBtn');
+    if (toolsCloseBtn) toolsCloseBtn.addEventListener('click', closeTools);
+    const bbTools = document.getElementById('bbTools');
+    if (bbTools) bbTools.addEventListener('click', openTools);
+
+    const backToTree = () => {
+      saveNow();
+      document.body.classList.remove('note-open');
+      markBottomBar();
+    };
+    const markBottomBar = () => {
+      const bbList = document.getElementById('bbList');
+      if (bbList) bbList.classList.toggle('on', !document.body.classList.contains('note-open'));
+    };
+    const bbList = document.getElementById('bbList');
+    if (bbList) bbList.addEventListener('click', backToTree);
+    const bbNew = document.getElementById('bbNew');
+    if (bbNew) bbNew.addEventListener('click', create);
+    const bbSearch = document.getElementById('bbSearch');
+    if (bbSearch) bbSearch.addEventListener('click', () => {
+      backToTree();
+      refs.searchInput.focus();
+    });
+    markBottomBar();
+
     refs.settingsBtn.addEventListener('click', openSettings);
     refs.deleteBtn.addEventListener('click', deleteActive);
 
@@ -1553,6 +1623,14 @@
     });
 
     refs.noteList.addEventListener('click', event => {
+      const folder = event.target.closest('.tree-folder');
+      if (folder) {
+        const path = folder.dataset.tree;
+        if (state.collapsed.has(path)) state.collapsed.delete(path);
+        else state.collapsed.add(path);
+        renderList();
+        return;
+      }
       const row = event.target.closest('.note-row');
       if (row) selectNote(row.dataset.id, { focus: false });
     });

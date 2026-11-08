@@ -13,7 +13,7 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon-192.jpg" type="image/jpeg">
   <link rel="apple-touch-icon" href="icon-192.jpg">
-  <link rel="stylesheet" href="styles.css?v=20261109d">
+  <link rel="stylesheet" href="styles.css?v=20261109e">
 </head>
 <body>
   <a class="skip-link" href="#editorPane">跳到编辑区</a>
@@ -31,6 +31,9 @@
         <button class="text-btn list-toggle-btn" id="listToggleBtn" type="button" aria-controls="noteListPane" aria-expanded="true">
           <svg viewBox="0 0 24 24"><path d="M5 6h14M5 12h14M5 18h9"/></svg>
           <span>笔记列表</span>
+        </button>
+        <button class="icon-btn" id="gearBtn" type="button" aria-label="设置与工具" title="设置与工具">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.9l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.9-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.9.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.9 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.9l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.9.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.9-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.9V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z"/></svg>
         </button>
         <button class="text-btn sync-btn" id="syncBtn" type="button" title="同步状态" aria-live="polite">
           <span class="sync-dot" id="syncDot"></span>
@@ -60,9 +63,6 @@
             <span class="nav-count" id="allCount">0</span>
           </button>
         </nav>
-
-        <div class="side-label">文件夹</div>
-        <div class="folder-tree" id="folderTree"></div>
 
         <div class="side-label">标签</div>
         <div class="tag-cloud" id="tagCloud"></div>
@@ -228,15 +228,32 @@
     </div>
   </dialog>
 
+
+  <nav class="bottom-bar" id="bottomBar" aria-label="主要操作">
+    <button type="button" id="bbList"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg><span>文件</span></button>
+    <button type="button" id="bbNew"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg><span>新建</span></button>
+    <button type="button" id="bbSearch"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="M16 16l4 4"/></svg><span>搜索</span></button>
+    <button type="button" id="bbTools"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.9l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.9-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.9.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.9 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.9l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.9.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.9-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.9V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z"/></svg><span>设置</span></button>
+  </nav>
+
+  <dialog class="modal" id="toolsDialog">
+    <div class="modal-card">
+      <button class="modal-close" type="button" id="toolsCloseBtn" aria-label="关闭">×</button>
+      <span class="eyebrow">笔记工具</span>
+      <h2>设置与工具</h2>
+      <div class="tools-body" id="toolsBody"></div>
+    </div>
+  </dialog>
+
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
-  <script src="core.js?v=20261109d"></script>
-  <script src="crypto.js?v=20261109d"></script>
-  <script src="db.js?v=20261109d"></script>
-  <script src="sync.js?v=20261109d"></script>
-  <script src="config.js?v=20261109d"></script>
-  <script src="live-editor.bundle.js?v=20261109d"></script>
-  <script src="oss.js?v=20261109d"></script>
-  <script src="app.js?v=20261109d"></script>
+  <script src="core.js?v=20261109e"></script>
+  <script src="crypto.js?v=20261109e"></script>
+  <script src="db.js?v=20261109e"></script>
+  <script src="sync.js?v=20261109e"></script>
+  <script src="config.js?v=20261109e"></script>
+  <script src="live-editor.bundle.js?v=20261109e"></script>
+  <script src="oss.js?v=20261109e"></script>
+  <script src="app.js?v=20261109e"></script>
 </body>
 </html>
