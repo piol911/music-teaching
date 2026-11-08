@@ -1483,8 +1483,10 @@ function onDown(e) {
 
   if (state.tool === 'select') {
     // 触屏上单指拖空白更自然的是平移（框选留给桌面鼠标）
-    if (e.pointerType === 'touch') { startPan(e); return; }
-    if (state.focusId || state.immersive) { exitFocus(); return; }   // 聚焦时点一下空白就退出
+    // ⚠️ 但点空白必须先把选中清掉，否则选中框会一直挂着、没法再选别的
+    // 聚焦/沉浸时，点一下空白先退出（触屏也要能这样退）
+    if (state.focusId || state.immersive) { exitFocus(); return; }
+    if (e.pointerType === 'touch') { clearSelection(); startPan(e); return; }
     startMarquee(e);
     return;
   }
@@ -4201,6 +4203,15 @@ function boot() {
   requestAnimationFrame(fpsLoop);
   /* 首次打开不再自动弹操作说明（弹窗高度不够，总是显示不全）—— 只在设置里手动打开 */
   window.addEventListener('resize', () => { applyCamera(); drawMinimap(); });
+  /* 页面被放大了 or 被当成桌面版打开了 —— 给一句提示，不然会以为界面坏了 */
+  setTimeout(() => {
+    const vv = window.visualViewport;
+    const zoomed = !!vv && Math.abs((vv.scale || 1) - 1) > 0.08;
+    const phone = Math.min(screen.width, screen.height) < 620 && navigator.maxTouchPoints > 1;
+    if (zoomed) showToast('页面被放大了：双指捏合恢复到 100%');
+    else if (phone && innerWidth > 820) showToast('现在是桌面版视图：在浏览器菜单里关掉「请求桌面网站」');
+  }, 2600);
+
   window.addEventListener('beforeunload', () => { try { save(); } catch (e) { } });
 
   // 目录与云同步：先把旧配置读出来（迁移要用），但先别急着同步
