@@ -311,7 +311,19 @@
 
   async function getAttachmentFile(meta) {
     if (state.attachmentUrls.has(meta.id)) return state.attachmentUrls.get(meta.id);
-    const cipher = await DB.getAttachment(meta.id);
+    let cipher = await DB.getAttachment(meta.id);
+    if (!cipher && meta.oss && window.NotesOSS) {
+      // 换设备打开时本机还没有这份附件 —— 从 OSS 拉密文，顺便缓存一份到本机
+      try {
+        const packed = await NotesOSS.getAttachment(meta.id);
+        if (packed) {
+          cipher = unpackCipher(packed);
+          if (cipher) await DB.putAttachment(meta.id, cipher);
+        }
+      } catch (error) {
+        console.warn('云端附件拉取失败', error);
+      }
+    }
     if (!cipher) return null;
     const plain = await Crypto.decryptBytes(state.key, cipher);
     const blob = new Blob([plain], { type: meta.type || 'application/octet-stream' });
@@ -319,6 +331,11 @@
     const value = { blob, file, url: URL.createObjectURL(blob) };
     state.attachmentUrls.set(meta.id, value);
     return value;
+  }
+
+  async function purgeAttachment(id) {
+    await DB.deleteAttachment(id);
+    if (window.NotesOSS) { try { await NotesOSS.deleteAttachment(id); } catch (e) { /* 尽力而为 */ } }
   }
 
   function revokeAttachment(id) {
@@ -926,6 +943,16 @@
     showToast(`已导入 ${imported.length + updates.length} 篇笔记`);
   }
 
+
+  /* 把加密信封整体 JSON 序列化成一个字节流，OSS 上只存这一个对象。
+     不做任何格式假设，decryptBytes 拿到什么形状就还原成什么形状。 */
+  function packCipher(cipher) {
+    return new TextEncoder().encode(JSON.stringify(cipher));
+  }
+  function unpackCipher(bytes) {
+    try { return JSON.parse(new TextDecoder().decode(bytes)); } catch (e) { return null; }
+  }
+
   async function addAttachments(fileList) {
     const note = activeNote();
     if (!note) {
@@ -934,7 +961,7 @@
     }
     const files = [...fileList];
     if (!files.length) return;
-    let added = 0;
+    let added = 0, cloudPending = 0, failedOSS = 0;
     for (const file of files) {
       const kind = fileKind(file);
       if (kind === 'file') {
@@ -950,15 +977,28 @@
         const bytes = await file.arrayBuffer();
         const cipher = await Crypto.encryptBytes(state.key, bytes);
         await DB.putAttachment(id, cipher);
-        note.attachments.push({
+        const meta = {
           id,
           name: file.name,
           type: file.type || 'application/octet-stream',
           size: file.size,
           kind,
-          createdAt: now()
-        });
+          createdAt: now(),
+          oss: false            // 云端副本是否就绪
+        };
+        note.attachments.push(meta);
         added += 1;
+        /* 密文再传一份到阿里云 OSS（notes/attachments/<id>），这样换设备附件也跟得上。
+           失败只提示，不回滚：本机这份仍然是好的，稍后可重新上传。 */
+        try {
+          const packed = packCipher(cipher);
+          await (window.NotesOSS ? NotesOSS.putAttachment(id, packed, meta.type) : Promise.reject(new Error('OSS 模块未加载')));
+          meta.oss = true;
+          cloudPending += 1;
+        } catch (err) {
+          console.warn('附件未能上传 OSS', err);
+          failedOSS += 1;
+        }
       } catch (error) {
         console.error('附件保存失败', error);
         showToast(`无法保存：${file.name}`);
@@ -968,7 +1008,9 @@
       noteChanged(note);
       await DB.putNote(state.key, Crypto, note);
       renderNoteExtras(note);
-      showToast(`已添加 ${added} 个文件到本机`);
+      showToast(failedOSS
+        ? `已添加 ${added} 个文件（${failedOSS} 个没能传到云端，可稍后重试）`
+        : `已添加 ${added} 个文件，本机与云端各存一份`);
     }
   }
 
