@@ -792,10 +792,15 @@
   async function pullChanges(token) {
     let cursor = Number(await DB.getMeta(CURSOR_META)) || 0;
     let changed = false;
+    const stat = { fetched: 0, applied: 0, failed: 0 };
     for (let page = 0; page < 20; page += 1) {
       const data = await api.pull(token, cursor);
       for (const record of data.records || []) {
+        stat.fetched += 1;
+        const before = state.decryptFailures || 0;
         await applyRemoteRecord(record);
+        if ((state.decryptFailures || 0) > before) stat.failed += 1;
+        else stat.applied += 1;
         changed = true;
       }
       cursor = Number(data.cursor) || cursor;
@@ -803,6 +808,7 @@
       if (!data.hasMore) break;
     }
     if (changed) renderAll();
+    state.lastPullStat = stat;
     if (state.decryptFailures) {
       const n = state.decryptFailures;
       state.decryptFailures = 0;
@@ -887,10 +893,19 @@
     setSyncState('syncing', '同步中');
     try {
       saveNow();
-      await pullChanges(session.token);
+      const stat = await pullChanges(session.token);
       await pushChanges(session.token);
       state.syncAt = now();
       setSyncState('ok', '已同步');
+      /* 一句话说清这次同步干了什么 —— 「怎么是空的」就靠它定位 */
+      const st = state.lastPullStat || stat;
+      if (st && st.fetched) {
+        showToast(st.failed
+          ? `同步完成：云端 ${st.fetched} 条，解开 ${st.applied} 条，${st.failed} 条解不开（口令不对）`
+          : `同步完成：云端 ${st.fetched} 条已全部解开`);
+      } else {
+        showToast('同步完成：云端暂无新内容');
+      }
     } catch (error) {
       if (error.status === 401 || error.status === 403) {
         writeSession(null);
@@ -1024,7 +1039,7 @@
     const alive = state.notes.filter(note => !note.deleted);
     const groups = new Map();
     for (const note of alive) {
-      const key = String(note.title || '').replace(/（备份[^）]*）$/, '').trim();
+      const key = String(note.title || '').replace(/（备份[^）]*）$|（冲突副本[^）]*）$/, '').trim();
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key).push(note);
     }
