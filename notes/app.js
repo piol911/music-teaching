@@ -31,6 +31,7 @@
     listCount: $('#listCount'),
     noteList: $('#noteList'),
     allCount: $('#allCount'),
+    folderTree: $('#folderTree'),
     tagCloud: $('#tagCloud'),
     importBtn: $('#importBtn'),
     exportBtn: $('#exportBtn'),
@@ -100,6 +101,8 @@
     notes: [],
     activeId: '',
     tag: '',
+    folder: '',
+    collapsed: new Set(),
     query: '',
     sidebarCollapsed: false,
     listCollapsed: false,
@@ -113,6 +116,7 @@
     syncRunning: false,
     syncQueued: false,
     vaultReady: false,
+    syncManual: false,
     unlockOnly: false,
     editor: null,
     attachmentUrls: new Map(),
@@ -254,15 +258,65 @@
   }
 
   function notesInScope() {
-    return Core.searchNotes(state.notes, state.query, '', state.tag);
+    return Core.searchNotes(state.notes, state.query, state.folder, state.tag);
+  }
+
+
+  /* ---------- 文件夹树（参照 Osprey 的文件树：小字号、可折叠） ---------- */
+  function folderTreeData() {
+    const root = { name: '', path: '', children: new Map(), count: 0 };
+    for (const note of state.notes) {
+      if (note.deleted) continue;
+      root.count += 1;
+      const path = Core.normalizeFolder(note.folder);
+      if (!path) continue;
+      let node = root;
+      let acc = '';
+      for (const part of path.split('/')) {
+        acc = acc ? `${acc}/${part}` : part;
+        if (!node.children.has(part)) {
+          node.children.set(part, { name: part, path: acc, children: new Map(), count: 0 });
+        }
+        node = node.children.get(part);
+        node.count += 1;
+      }
+    }
+    return root;
+  }
+
+  function renderFolderTree() {
+    if (!refs.folderTree) return;
+    const root = folderTreeData();
+    if (!root.children.size) {
+      refs.folderTree.innerHTML = '<div class="folder-tree-empty">还没有文件夹（导入 Markdown 目录会自动生成）</div>';
+      return;
+    }
+    const rows = [];
+    const walk = (node, depth) => {
+      const kids = [...node.children.values()].sort((a, b) => a.name.localeCompare(b.name, 'zh-Hans-CN'));
+      for (const child of kids) {
+        const open = !state.collapsed.has(child.path);
+        rows.push(
+          `<button class="folder-row${state.folder === child.path ? ' active' : ''}" data-path="${Core.escapeHtml(child.path)}" style="padding-left:${6 + depth * 12}px">`
+          + `<span class="folder-arrow${open && child.children.size ? ' open' : ''}">${child.children.size ? '▶' : ''}</span>`
+          + `<span class="folder-name">${Core.escapeHtml(child.name)}</span>`
+          + `<span class="folder-count">${child.count}</span>`
+          + `</button>`
+        );
+        if (open) walk(child, depth + 1);
+      }
+    };
+    walk(root, 0);
+    refs.folderTree.innerHTML = rows.join('');
   }
 
   function renderSidebar() {
     const allButton = $('.nav-row[data-folder=""]');
-    allButton.classList.toggle('active', !state.tag);
+    allButton.classList.toggle('active', !state.tag && !state.folder);
     if (!state.tag) allButton.setAttribute('aria-current', 'page');
     else allButton.removeAttribute('aria-current');
     refs.allCount.textContent = state.notes.filter(note => !note.deleted).length;
+    renderFolderTree();
   }
 
   function allTags() {
@@ -431,7 +485,7 @@
     refs.listCount.textContent = String(notes.length);
     refs.listTitle.textContent = state.tag
       ? `#${state.tag}`
-      : '全部笔记';
+      : (state.folder || '全部笔记');
 
     if (!notes.length) {
       refs.noteList.innerHTML = `<div class="list-empty">${state.query ? '没有找到匹配的笔记' : '这里还没有笔记'}</div>`;
@@ -918,7 +972,12 @@
       setSyncState('ok', '已同步');
       /* 一句话说清这次同步干了什么 —— 「怎么是空的」就靠它定位 */
       const st = state.lastPullStat || stat || { fetched: 0, applied: 0, failed: 0 };
-      if (!st.fetched) {
+      /* 只有「用户自己点的同步」才弹结果；后台每 30 秒自动同步保持安静 */
+      const manual = state.syncManual;
+      state.syncManual = false;
+      if (!manual) {
+        // 后台同步：什么都不弹
+      } else if (!st.fetched) {
         // 情况 A：云端是空的 —— 这是新笔记本，不是口令问题
         showToast('同步完成：云端还没有内容（这是一本新笔记本）');
       } else if (st.applied > 0 && st.failed === 0) {
@@ -937,7 +996,7 @@
           refs.vaultDialog.showModal();
           setTimeout(() => refs.vaultPassword.focus(), 100);
         }, 500);
-      } else {
+      } else if (manual) {
         showToast(`同步完成：云端 ${st.fetched} 条，解开 ${st.applied} 条，${st.failed} 条解不开`);
       }
     } catch (error) {
@@ -1168,7 +1227,7 @@
     if (officeLoading) return officeLoading;
     officeLoading = new Promise((resolve, reject) => {
       const script = document.createElement('script');
-      script.src = 'office-preview.bundle.js?v=20261109b';
+      script.src = 'office-preview.bundle.js?v=20261109c';
       script.onload = () => resolve();
       script.onerror = () => { officeLoading = null; reject(new Error('预览组件下载失败')); };
       document.head.appendChild(script);
@@ -1497,6 +1556,7 @@
     });
     $('.nav-row[data-folder=""]').addEventListener('click', () => {
       state.tag = '';
+      state.folder = '';
       document.body.classList.remove('menu-open');
       refs.menuBtn.setAttribute('aria-expanded', 'false');
       renderSidebar();
@@ -1524,7 +1584,28 @@
     });
     refs.titleInput.addEventListener('input', updateFromInputs);
 
+
+    /* 文件夹树：点名字=筛选，点箭头=展开/收起 */
+    if (refs.folderTree) {
+      refs.folderTree.addEventListener('click', event => {
+        const row = event.target.closest('.folder-row');
+        if (!row) return;
+        const path = row.dataset.path;
+        const onArrow = !!event.target.closest('.folder-arrow');
+        if (onArrow) {
+          if (state.collapsed.has(path)) state.collapsed.delete(path);
+          else state.collapsed.add(path);
+          renderFolderTree();
+          return;
+        }
+        state.folder = state.folder === path ? '' : path;
+        state.tag = '';
+        renderAll();
+      });
+    }
+
     refs.syncBtn.addEventListener('click', async () => {
+      state.syncManual = true;
       if (readSession()) { syncNow(); return; }
       // 本机有登录凭据就直接连，不再逼用户重输口令
       const meta = await DB.getMeta(VAULT_META).catch(() => null);
