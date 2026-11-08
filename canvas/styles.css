@@ -2067,3 +2067,7 @@ body.compact .more-pop button{ flex-direction:column; justify-content:center; ga
   .topbar .board-title-wrap{ max-width: none }
   .topbar .board-name{ max-width: clamp(180px, calc(50vw - 250px), 420px) }
 }
+
+/* 浏览模式（光标关掉）：只是看，拖动就平移 */
+#stage.tool-browse{ cursor:grab }
+#stage.tool-browse.is-panning{ cursor:grabbing }
