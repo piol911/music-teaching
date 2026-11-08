@@ -647,6 +647,7 @@
         vaultId: derived.vaultId,
         key: derived.key,
         iterations: derived.iterations,
+        authSecret: derived.authSecret,   // 登录凭据：和密钥同级存放，免得每次同步都重输口令
         createdAt: existing && existing.createdAt || now()
       });
       state.vaultReady = true;
@@ -875,14 +876,31 @@
   }
 
   async function connectCloud(password) {
-    if (!password) throw new Error('请输入笔记口令');
     refs.syncSubmitBtn.disabled = true;
     refs.syncSubmitBtn.textContent = '正在验证…';
     refs.syncError.textContent = '';
     try {
-      const derived = await Crypto.deriveVault(password);
-      if (derived.vaultId !== state.vaultId) throw new Error('口令与当前笔记库不一致');
-      const session = await api.login(derived.authSecret);
+      /* 不给口令就用本机存好的登录凭据（正常情况都走这条路，不用重输） */
+      let authSecret;
+      if (password) {
+        const derived = await Crypto.deriveVault(password);
+        if (state.vaultId && derived.vaultId !== state.vaultId) {
+          throw new Error('这个口令和本机笔记库的口令不一样。请用创建笔记库时设的那个口令；忘了的话，可在「笔记库设置 → 清除本机笔记缓存」后用新口令重开。');
+        }
+        state.key = derived.key;
+        state.vaultId = derived.vaultId;
+        authSecret = derived.authSecret;
+        const meta = await DB.getMeta(VAULT_META) || {};
+        meta.v = 1; meta.vaultId = derived.vaultId; meta.key = derived.key;
+        meta.iterations = derived.iterations; meta.authSecret = authSecret;
+        meta.createdAt = meta.createdAt || now();
+        await DB.setMeta(VAULT_META, meta);
+      } else {
+        const meta = await DB.getMeta(VAULT_META);
+        authSecret = meta && meta.authSecret;
+        if (!authSecret) throw new Error('本机还没有登录凭据，请输入一次笔记口令');
+      }
+      const session = await api.login(authSecret);
       writeSession(session);
       refs.syncDialog.close();
       refs.syncPassword.value = '';
@@ -1361,14 +1379,21 @@
     });
     refs.titleInput.addEventListener('input', updateFromInputs);
 
-    refs.syncBtn.addEventListener('click', () => {
-      if (readSession()) {
-        syncNow();
-      } else {
-        refs.syncError.textContent = '';
-        refs.syncDialog.showModal();
-        setTimeout(() => refs.syncPassword.focus(), 80);
+    refs.syncBtn.addEventListener('click', async () => {
+      if (readSession()) { syncNow(); return; }
+      // 本机有登录凭据就直接连，不再逼用户重输口令
+      const meta = await DB.getMeta(VAULT_META).catch(() => null);
+      if (meta && meta.authSecret) {
+        showToast('正在连接笔记库…');
+        connectCloud('').catch(error => {
+          refs.syncError.textContent = error.message;
+          refs.syncDialog.showModal();
+        });
+        return;
       }
+      refs.syncError.textContent = '';
+      refs.syncDialog.showModal();
+      setTimeout(() => refs.syncPassword.focus(), 80);
     });
     refs.syncCloseBtn.addEventListener('click', () => refs.syncDialog.close());
     refs.syncForm.addEventListener('submit', event => {

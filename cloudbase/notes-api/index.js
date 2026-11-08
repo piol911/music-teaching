@@ -113,17 +113,45 @@ function parsePasswordHash(value) {
   };
 }
 
-function verifyAuthSecret(authSecret) {
-  const config = parsePasswordHash(process.env.NOTES_PASSWORD_HASH);
-  if (!config || !config.salt.length || !config.hash.length) {
-    throw new Error('NOTES_PASSWORD_HASH 未配置或格式不正确');
-  }
-  const actual = crypto.scryptSync(String(authSecret || ''), config.salt, config.hash.length, {
-    N: config.n,
-    r: config.r,
-    p: config.p,
+/* 账号口令哈希：优先用环境变量；没有就在数据库里找；
+   两处都没有 = 第一次连接 —— 把这次的凭据登记为账号口令（只此一次）。
+   这样不用跑命令生成哈希，直接在应用里设一次口令即可。 */
+const ACCOUNT_DOC = '__account__';
+
+async function loadPasswordHash() {
+  const envHash = String(process.env.NOTES_PASSWORD_HASH || '').trim();
+  if (envHash) return envHash;
+  const result = await db.collection('notes_security').doc(ACCOUNT_DOC).get();
+  const doc = result.data && result.data[0];
+  return (doc && doc.hash) || '';
+}
+
+function hashAuthSecret(authSecret, salt, length) {
+  return crypto.scryptSync(String(authSecret || ''), salt, length, {
+    N: 16384,
+    r: 8,
+    p: 1,
     maxmem: 128 * 1024 * 1024
   });
+}
+
+async function verifyAuthSecret(authSecret) {
+  const raw = await loadPasswordHash();
+  if (!raw) {
+    // 首次连接：把这个凭据登记为账号口令，往后就用它
+    const salt = crypto.randomBytes(24);
+    const hash = hashAuthSecret(authSecret, salt, 32);
+    await db.collection('notes_security').doc(ACCOUNT_DOC).set({
+      hash: `scrypt$16384$8$1$${salt.toString('hex')}$${hash.toString('hex')}`,
+      createdAt: Date.now()
+    });
+    return true;
+  }
+  const config = parsePasswordHash(raw);
+  if (!config || !config.salt.length || !config.hash.length) {
+    throw new Error('账号口令哈希格式不正确');
+  }
+  const actual = hashAuthSecret(authSecret, config.salt, config.hash.length);
   return actual.length === config.hash.length && crypto.timingSafeEqual(actual, config.hash);
 }
 
@@ -278,7 +306,7 @@ exports.main = async function main(event) {
     const body = bodyOf(event);
     if (body.action === 'login') {
       await enforceRateLimit(event);
-      if (!verifyAuthSecret(body.authSecret)) {
+      if (!(await verifyAuthSecret(body.authSecret))) {
         await recordLoginResult(event, false);
         return reply(401, { ok: false, error: '笔记口令不正确' }, origin);
       }
