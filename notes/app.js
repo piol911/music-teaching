@@ -86,6 +86,7 @@
     settingStorage: $('#settingStorage'),
     settingCount: $('#settingCount'),
     settingCloud: $('#settingCloud'),
+    settingVault: $('#settingVault'),
     changeDeviceBtn: $('#changeDeviceBtn'),
     resetDeviceBtn: $('#resetDeviceBtn'),
     toast: $('#toast')
@@ -232,7 +233,7 @@
             : kind === 'error'
               ? '同步失败，本地内容仍然保留'
               : '仅保存在本机，登录后可自动同步';
-    refs.syncHint.textContent = text;
+    refs.syncHint.textContent = '';   // 状态只在右上角一处显示，别两头都挂
   }
 
   function readSession() {
@@ -656,7 +657,7 @@
       const pending = state.notes || [];      // 设口令前内存里可能已经写了几条
       await startNotes();
       if (pending.length && !state.notes.length) {
-        state.notes = pending.map(normalizeNote);
+        state.notes = pending.map(n => ({ ...normalizeNote(n), dirty: true }));   // 必须标脏才会推送
         for (const note of state.notes) await DB.putNote(state.key, Crypto, note);
         renderAll();
         showToast(`已把 ${state.notes.length} 条笔记存进加密笔记库`);
@@ -743,8 +744,16 @@
 
   async function applyRemoteRecord(record) {
     if (!record || !record.id || !record.cipher) return [];
+    let plain;
+    try {
+      plain = await Crypto.decryptJson(state.key, record.cipher);
+    } catch (error) {
+      // 多半是另一台设备用了不同的笔记口令 —— 解不开就跳过，并记账提示
+      state.decryptFailures = (state.decryptFailures || 0) + 1;
+      return [];
+    }
     const remote = normalizeNote({
-      ...(await Crypto.decryptJson(state.key, record.cipher)),
+      ...plain,
       id: record.id,
       version: Number(record.version) || 0,
       serverUpdatedAt: Number(record.updatedAt) || 0,
@@ -788,6 +797,11 @@
       if (!data.hasMore) break;
     }
     if (changed) renderAll();
+    if (state.decryptFailures) {
+      const n = state.decryptFailures;
+      state.decryptFailures = 0;
+      showToast(`${n} 条云端笔记用当前口令解不开（另一台设备可能用了不同的笔记口令）`);
+    }
   }
 
   async function pushChanges(token) {
@@ -1233,6 +1247,8 @@
     refs.settingStorage.textContent = 'IndexedDB · 加密';
     refs.settingCount.textContent = state.notes.filter(note => !note.deleted).length;
     refs.settingCloud.textContent = readSession() ? '已登录' : '未连接';
+    /* 指纹 = 口令派生出来的前 8 位：两台设备显示一样，就说明用的是同一个口令 */
+    refs.settingVault.textContent = state.vaultId ? String(state.vaultId).slice(0, 8).toUpperCase() : '未设置';
     refs.settingsDialog.showModal();
   }
 
