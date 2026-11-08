@@ -1160,6 +1160,22 @@
     }
   }
 
+
+  /* Office 预览包有 785KB，平时用不到 —— 第一次打开 docx/xlsx 时才去下载 */
+  let officeLoading = null;
+  function loadOfficePreview() {
+    if (window.XYOfficePreview) return Promise.resolve();
+    if (officeLoading) return officeLoading;
+    officeLoading = new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = 'office-preview.bundle.js?v=20261109b';
+      script.onload = () => resolve();
+      script.onerror = () => { officeLoading = null; reject(new Error('预览组件下载失败')); };
+      document.head.appendChild(script);
+    });
+    return officeLoading;
+  }
+
   async function openAttachment(id) {
     const note = activeNote();
     const meta = note && (note.attachments || []).find(item => item.id === id);
@@ -1194,18 +1210,16 @@
       frame.title = meta.name;
       refs.attachmentDialogBody.append(frame);
     } else if (['docx', 'spreadsheet'].includes(meta.kind)) {
-      if (!window.XYOfficePreview) {
-        refs.attachmentDialogBody.innerHTML = '<div class="office-convert-result">Office 预览组件未加载。</div>';
-      } else {
-        const shell = document.createElement('div');
-        shell.className = 'office-preview-shell';
+      const shell = document.createElement('div');
+      shell.className = 'office-preview-shell';
+      shell.innerHTML = '<div class="office-convert-result">正在准备预览…</div>';
+      refs.attachmentDialogBody.append(shell);
+      try {
+        await loadOfficePreview();
         shell.innerHTML = '<div class="office-convert-result">正在渲染文件…</div>';
-        refs.attachmentDialogBody.append(shell);
-        try {
-          await window.XYOfficePreview.previewOffice(value.file, shell);
-        } catch (error) {
-          shell.innerHTML = `<div class="office-convert-result">预览失败：${Core.escapeHtml(error.message)}</div>`;
-        }
+        await window.XYOfficePreview.previewOffice(value.file, shell);
+      } catch (error) {
+        shell.innerHTML = `<div class="office-convert-result">预览失败：${Core.escapeHtml(error.message)}</div>`;
       }
     }
     refs.attachmentDialog.showModal();
@@ -1225,7 +1239,8 @@
   }
 
   async function convertActiveAttachment() {
-    if (!state.activeAttachment || !window.XYOfficePreview) return;
+    if (!state.activeAttachment) return;
+    try { await loadOfficePreview(); } catch (e) { showToast('预览组件下载失败'); return; }
     const { meta, file } = state.activeAttachment;
     if (!file) return;
     refs.convertAttachmentBtn.disabled = true;
