@@ -4203,14 +4203,28 @@ function boot() {
   requestAnimationFrame(fpsLoop);
   /* 首次打开不再自动弹操作说明（弹窗高度不够，总是显示不全）—— 只在设置里手动打开 */
   window.addEventListener('resize', () => { applyCamera(); drawMinimap(); });
-  /* 页面被放大了 or 被当成桌面版打开了 —— 给一句提示，不然会以为界面坏了 */
+  /* 手机上被当成桌面版打开（布局宽度 > 700）时，媒体查询不会生效。
+     这里直接套一遍紧凑布局兜底，并把真实宽度提示出来，方便排查。 */
+  function applyCompactIfNeeded() {
+    const sw = screen.width || innerWidth;
+    const phone = navigator.maxTouchPoints > 1 && Math.min(screen.width, screen.height) < 620;
+    /* 布局宽度明显大于屏幕宽度 = 页面被缩放（Safari aA→缩放）或被当成桌面版 */
+    const ratio = innerWidth / sw;
+    const on = !!(phone && ratio > 1.3);
+    document.body.classList.toggle('compact', on);
+    return { on, ratio };
+  }
+  const cmp = applyCompactIfNeeded();
+  if (cmp.on) {
+    const pct = Math.max(25, Math.round(100 / cmp.ratio / 5) * 5);
+    setTimeout(() => showToast('页面被缩放到 ' + pct + '%：点地址栏左边的「大小 / aA」→ 缩放 → 100%'), 800);
+  }
+  window.addEventListener('orientationchange', () => setTimeout(applyCompactIfNeeded, 350));
+  /* 页面被放大（Safari 的 aA → 缩放）也会看着像桌面版 */
   setTimeout(() => {
     const vv = window.visualViewport;
-    const zoomed = !!vv && Math.abs((vv.scale || 1) - 1) > 0.08;
-    const phone = Math.min(screen.width, screen.height) < 620 && navigator.maxTouchPoints > 1;
-    if (zoomed) showToast('页面被放大了：双指捏合恢复到 100%');
-    else if (phone && innerWidth > 820) showToast('现在是桌面版视图：在浏览器菜单里关掉「请求桌面网站」');
-  }, 2600);
+    if (vv && Math.abs((vv.scale || 1) - 1) > 0.08) showToast('页面被放大了：双指捏合恢复到 100%');
+  }, 3200);
 
   window.addEventListener('beforeunload', () => { try { save(); } catch (e) { } });
 

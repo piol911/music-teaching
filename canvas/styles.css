@@ -2002,3 +2002,38 @@ html[data-theme="dark"] #libMask .lib-row:hover{ background:rgba(255,255,255,.07
   overflow:hidden; text-overflow:ellipsis; max-width:190px;
 }
 #libMask .lib-list{ flex:0 1 auto }
+
+/* ============================================================
+   兜底：手机上若被当成桌面版打开（布局宽度 > 700），
+   媒体查询不会生效 → 用 body.compact 强制套一遍紧凑布局
+   ============================================================ */
+body.compact .topbar{ gap:6px; padding:0 8px; height:56px }
+body.compact .topbar .home-logo .hl-text{ font-size:17px }
+body.compact .topbar .board-name{ max-width:calc(100vw - 300px); font-size:15px }
+body.compact .topbar .zoom-pill{ position:static; transform:none; margin-left:auto; gap:0 }
+body.compact #btnZoomIn, body.compact #btnZoomOut,
+body.compact #btnFit, body.compact .topbar .divider{ display:none }
+body.compact .topbar .btn.icon{ width:38px; height:38px }
+body.compact .fps-dot{ width:26px; height:26px; font-size:9.5px }
+
+body.compact .dock-bar{ height:58px; padding:6px; gap:2px; bottom:calc(14px + var(--sab)) }
+body.compact .dock-bar .vd-nav{ width:46px; height:46px; border-radius:14px }
+body.compact .dock-bar .vd-nav svg{ width:20px; height:20px }
+body.compact .dock-bar .vd-count{ min-width:54px; height:46px; font-size:14px; border-radius:14px }
+body.compact .dock-bar .tool{ width:46px; height:46px; border-radius:14px }
+body.compact .dock-bar .tool svg{ width:22px; height:22px }
+body.compact .dock-bar .dock-more,
+body.compact .dock-bar .dock-nav{ width:46px; height:46px; border-radius:14px }
+body.compact .dock-bar .dock-more svg,
+body.compact .dock-bar .dock-nav svg{ width:21px; height:21px }
+body.compact .dock-bar .vd-add, body.compact .dock-bar .vd-play{ display:none }
+body.compact .dock-sep{ height:26px; margin:0 1px }
+body.compact #toolbar .tool[data-tool]:not([data-tool="select"]){ display:none }
+body.compact #toolbar .tb-div{ display:none }
+body.compact #btnMapToggle{ display:none }
+body.compact .minimap{ width:180px; height:124px }
+body.compact .more-pop{
+  width:calc(100vw - 24px); max-width:340px;
+  grid-template-columns:repeat(3,1fr); gap:6px; padding:10px;
+}
+body.compact .more-pop button{ flex-direction:column; justify-content:center; gap:6px; padding:12px 4px; font-size:11.5px; text-align:center }
