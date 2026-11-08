@@ -89,6 +89,7 @@
     settingVault: $('#settingVault'),
     changeDeviceBtn: $('#changeDeviceBtn'),
     resetDeviceBtn: $('#resetDeviceBtn'),
+    dedupeBtn: $('#dedupeBtn'),
     toast: $('#toast')
   };
 
@@ -214,9 +215,7 @@
     showToast.timer = setTimeout(() => refs.toast.classList.remove('on'), 2400);
   }
 
-  function setSaveLabel(text) {
-    refs.saveLabel.textContent = text || '已保存';
-  }
+  function setSaveLabel() { /* 「已保存到本机」那行已移除，状态统一在右上角 */ }
 
   function setSyncState(kind, label) {
     state.syncState = kind;
@@ -233,7 +232,7 @@
             : kind === 'error'
               ? '同步失败，本地内容仍然保留'
               : '仅保存在本机，登录后可自动同步';
-    refs.syncHint.textContent = '';   // 状态只在右上角一处显示，别两头都挂
+    if (refs.syncHint) refs.syncHint.textContent = '';
   }
 
   function readSession() {
@@ -473,8 +472,8 @@
 
     const ordered = Core.searchNotes(state.notes, '', '', '');
     const noteNumber = ordered.findIndex(item => item.id === note.id) + 1;
-    refs.noteOrdinal.textContent = `NOTE ${String(Math.max(1, noteNumber)).padStart(2, '0')}`;
-    refs.noteDateKicker.textContent = new Intl.DateTimeFormat('zh-CN', {
+    if (refs.noteOrdinal) refs.noteOrdinal.textContent = `NOTE ${String(Math.max(1, noteNumber)).padStart(2, '0')}`;
+    if (refs.noteDateKicker) refs.noteDateKicker.textContent = new Intl.DateTimeFormat('zh-CN', {
       year: 'numeric',
       month: '2-digit',
       day: '2-digit'
@@ -482,7 +481,7 @@
     refs.titleInput.value = note.title;
     if (state.editor && state.editor.getValue() !== note.body) state.editor.setValue(note.body);
     refs.wordCount.textContent = `${note.body.replace(/\s/g, '').length.toLocaleString('zh-CN')} 字`;
-    refs.noteTime.textContent = new Date(note.updatedAt).toLocaleString('zh-CN', {
+    if (refs.noteTime) refs.noteTime.textContent = new Date(note.updatedAt).toLocaleString('zh-CN', {
       month: 'numeric',
       day: 'numeric',
       hour: '2-digit',
@@ -572,7 +571,7 @@
     note.updatedAt = now();
     note.dirty = true;
     refs.wordCount.textContent = `${note.body.replace(/\s/g, '').length.toLocaleString('zh-CN')} 字`;
-    refs.noteTime.textContent = new Date(note.updatedAt).toLocaleString('zh-CN', {
+    if (refs.noteTime) refs.noteTime.textContent = new Date(note.updatedAt).toLocaleString('zh-CN', {
       month: 'numeric',
       day: 'numeric',
       hour: '2-digit',
@@ -703,7 +702,7 @@
     }
     if (!readSession()) {
       setSyncState('local', '仅本机');
-      refs.syncHint.textContent = '仅保存在本机';
+      if (refs.syncHint) refs.syncHint.textContent = '';
       return;
     }
     if (state.syncState !== 'syncing') {
@@ -719,27 +718,30 @@
   }
 
   function noteContentEqual(a, b) {
-    return !!a && !!b &&
-      a.title === b.title &&
-      a.body === b.body &&
-      a.folder === b.folder &&
+    if (!a || !b) return false;
+    const norm = v => String(v || '').replace(/\s+/g, ' ').trim();
+    return norm(a.title) === norm(b.title) &&
+      norm(a.body) === norm(b.body) &&
+      norm(a.folder) === norm(b.folder) &&
       !!a.deleted === !!b.deleted;
   }
 
   function conflictCopy(local, remote) {
-    const copy = normalizeNote({
+    if (noteContentEqual(local, remote)) return null;
+    /* 副本只留在这台设备上当备份：不标脏、不推送。
+       否则副本会被推上去、又被拉回来，再生成新的副本 —— 之前冲突刷屏就是这么来的。 */
+    return normalizeNote({
       ...local,
       id: uid(),
-      title: `${local.title}（冲突副本 ${new Date().toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}）`,
+      title: `${local.title}（备份 ${new Date().toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}）`,
       sourcePath: '',
       version: 0,
       serverUpdatedAt: 0,
-      dirty: true,
+      dirty: false,
+      copyOf: local.id,
       createdAt: now(),
       updatedAt: now()
     });
-    if (noteContentEqual(local, remote)) return null;
-    return copy;
   }
 
   async function applyRemoteRecord(record) {
@@ -770,11 +772,15 @@
     }
 
     if (local.dirty) {
-      const copy = conflictCopy(local, remote);
-      if (copy) {
-        state.notes.push(copy);
-        await DB.putNote(state.key, Crypto, copy);
-        added.push(copy.id);
+      // 同一条本地笔记只备份一次，别每次拉取都造一份
+      const already = state.notes.some(note => note.copyOf === local.id);
+      if (!already) {
+        const copy = conflictCopy(local, remote);
+        if (copy) {
+          state.notes.push(copy);
+          await DB.putNote(state.key, Crypto, copy);
+          added.push(copy.id);
+        }
       }
     }
 
@@ -835,7 +841,14 @@
 
       const data = await api.push(token, batch.map(entry => entry.item));
       const accepted = new Map((data.accepted || []).map(item => [item.id, item]));
+      const conflicted = new Set((data.conflicts || []).map(item => item.id));
       for (const { note } of batch) {
+        if (conflicted.has(note.id)) {
+          // 版本被别人抢先了：本地内容已经在备份里，这里就地接受云端版本，别再重试
+          note.dirty = false;
+          await DB.putNote(state.key, Crypto, note);
+          continue;
+        }
         const result = accepted.get(note.id);
         if (!result) continue;
         note.version = Number(result.version) || note.version;
@@ -1003,6 +1016,38 @@
   }
   function unpackCipher(bytes) {
     try { return JSON.parse(new TextDecoder().decode(bytes)); } catch (e) { return null; }
+  }
+
+
+  /* 把刷屏的冲突副本收拢成一条：同一标题只留最新，其余标删除（可同步删除） */
+  async function mergeDuplicateNotes() {
+    const alive = state.notes.filter(note => !note.deleted);
+    const groups = new Map();
+    for (const note of alive) {
+      const key = String(note.title || '').replace(/（备份[^）]*）$/, '').trim();
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(note);
+    }
+    let removed = 0;
+    for (const list of groups.values()) {
+      if (list.length < 2) continue;
+      list.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+      for (const note of list.slice(1)) {
+        note.deleted = true;
+        note.dirty = true;
+        note.updatedAt = now();
+        await DB.putNote(state.key, Crypto, note);
+        removed += 1;
+      }
+    }
+    if (state.activeNote && state.activeNote.deleted) state.activeId = '';
+    renderAll();
+    if (removed) {
+      scheduleSync(400);
+      showToast(`已合并 ${removed} 条重复笔记（保留最新的）`);
+    } else {
+      showToast('没有发现重复笔记');
+    }
   }
 
   async function addAttachments(fileList) {
@@ -1490,6 +1535,11 @@
       showToast('在另一台设备打开本页，输入同一个笔记口令即可');
     });
     refs.resetDeviceBtn.addEventListener('click', resetDevice);
+    refs.dedupeBtn && refs.dedupeBtn.addEventListener('click', async () => {
+      if (!confirm('同一标题的笔记只保留最新的一条，其余移到删除。继续吗？')) return;
+      await mergeDuplicateNotes();
+      refs.settingsDialog.close();
+    });
 
     window.addEventListener('online', () => {
       updateOnlineState();
