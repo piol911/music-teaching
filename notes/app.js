@@ -637,8 +637,14 @@
     try {
       const derived = await Crypto.deriveVault(password);
       const existing = await DB.getMeta(VAULT_META);
-      if (existing && existing.vaultId && existing.vaultId !== derived.vaultId) {
-        throw new Error('这个口令与当前设备上的笔记库不一致');
+      if (existing && existing.vaultId && existing.vaultId !== derived.vaultId && !state.vaultResetAllowed) {
+        throw new Error('这个口令与当前设备上的笔记库不一样。若是想换成别的口令，请先在「笔记库设置 → 清除本机笔记缓存」。');
+      }
+      if (state.vaultResetAllowed) {
+        // 之前那个口令解不开云端内容 —— 允许直接换成本次输入的口令
+        state.vaultResetAllowed = false;
+        state.notes = [];
+        state.activeId = '';
       }
       state.key = derived.key;
       state.vaultId = derived.vaultId;
@@ -898,13 +904,28 @@
       state.syncAt = now();
       setSyncState('ok', '已同步');
       /* 一句话说清这次同步干了什么 —— 「怎么是空的」就靠它定位 */
-      const st = state.lastPullStat || stat;
-      if (st && st.fetched) {
-        showToast(st.failed
-          ? `同步完成：云端 ${st.fetched} 条，解开 ${st.applied} 条，${st.failed} 条解不开（口令不对）`
-          : `同步完成：云端 ${st.fetched} 条已全部解开`);
+      const st = state.lastPullStat || stat || { fetched: 0, applied: 0, failed: 0 };
+      if (!st.fetched) {
+        // 情况 A：云端是空的 —— 这是新笔记本，不是口令问题
+        showToast('同步完成：云端还没有内容（这是一本新笔记本）');
+      } else if (st.applied > 0 && st.failed === 0) {
+        // 情况 B：正常
+        showToast(`同步完成：云端 ${st.fetched} 条已全部同步`);
+      } else if (st.applied === 0 && st.failed > 0) {
+        // 情况 C：云端有内容，但一条都解不开 —— 口令不对
+        state.vaultResetAllowed = true;
+        showToast(`⚠️ 云端有 ${st.fetched} 条笔记，但当前口令一条都解不开 —— 口令很可能不对`, 6000);
+        setTimeout(() => {
+          state.unlockOnly = false;
+          refs.vaultDialogTitle.textContent = '口令可能不对';
+          refs.vaultDialogCopy.textContent = `云端有 ${st.fetched} 条笔记，用当前口令打不开。请重新输入「当初写入这些笔记时用的」那个口令；确认后会用它替换当前口令。`;
+          refs.confirmField.hidden = true;
+          refs.vaultSubmitBtn.textContent = '用这个口令重试';
+          refs.vaultDialog.showModal();
+          setTimeout(() => refs.vaultPassword.focus(), 100);
+        }, 500);
       } else {
-        showToast('同步完成：云端暂无新内容');
+        showToast(`同步完成：云端 ${st.fetched} 条，解开 ${st.applied} 条，${st.failed} 条解不开`);
       }
     } catch (error) {
       if (error.status === 401 || error.status === 403) {
