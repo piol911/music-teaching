@@ -1473,6 +1473,9 @@ function onDown(e) {
   if (state.editingId && elDom && elDom.dataset.id === state.editingId) return; // 编辑中不劫持
   if (state.editingId && (!elDom || elDom.dataset.id !== state.editingId)) exitEdit();
 
+  /* 纯浏览：不管按在元素还是空白，都只平移 */
+  if (state.tool === 'browse') { startPan(e); return; }
+
   const panMode = e.button === 1 || spaceDown || state.tool === 'pan';
 
   if (state.tool === 'erase') {
@@ -2225,6 +2228,12 @@ document.querySelectorAll('.tool[data-tool]').forEach(b => {
       const sel = [...state.selection].map(findEl).filter(x => x && x.type === 'image');
       if (sel.length === 1) openCrop(sel[0]);
       else showToast('先选中（且仅选中）一张图片，再点裁切');
+      return;
+    }
+    /* 光标是「开着/关着」两态：已经选中工具时再点一下 = 关掉，进入纯浏览 */
+    if (t === 'select' && state.tool === 'select') {
+      setTool('browse');
+      showToast('浏览模式：拖动只看不选，点工具可继续编辑');
       return;
     }
     setTool(t);
