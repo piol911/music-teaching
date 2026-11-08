@@ -684,7 +684,7 @@
       refs.vaultSubmitBtn.disabled = false;
       refs.vaultSubmitBtn.textContent = state.unlockOnly ? '解锁' : '开始使用';
       refs.vaultPassword.value = '';
-      if (refs.vaultPasswordConfirm) if (refs.vaultPasswordConfirm) refs.vaultPasswordConfirm.value = '';
+      if (refs.vaultPasswordConfirm) refs.vaultPasswordConfirm.value = '';
     }
   }
 
@@ -1325,7 +1325,7 @@
     refs.vaultPassword.placeholder = state.unlockOnly ? '输入现有笔记口令' : '至少 10 个字符';
     refs.vaultSubmitBtn.textContent = state.unlockOnly ? '解锁' : '开始使用';
     refs.vaultPassword.value = '';
-    if (refs.vaultPasswordConfirm) if (refs.vaultPasswordConfirm) refs.vaultPasswordConfirm.value = '';
+    if (refs.vaultPasswordConfirm) refs.vaultPasswordConfirm.value = '';
     refs.vaultDialog.showModal();
     setTimeout(() => refs.vaultPassword.focus(), 100);
   }
@@ -1564,9 +1564,9 @@
 
     refs.vaultForm.addEventListener('submit', event => {
       event.preventDefault();
-      setupVault(refs.vaultPassword.value, refs.vaultPasswordConfirm.value).catch(error => {
+      setupVault(refs.vaultPassword.value, undefined).catch(error => {
         showToast(error.message);
-        if (refs.vaultPasswordConfirm) if (refs.vaultPasswordConfirm) refs.vaultPasswordConfirm.value = '';
+        if (refs.vaultPasswordConfirm) refs.vaultPasswordConfirm.value = '';
       });
     });
     refs.vaultCloseBtn.addEventListener('click', () => {
