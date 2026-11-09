@@ -3,7 +3,7 @@
 /* 2026-11-09：改成「静态资源缓存优先 + 后台更新」，重复打开几乎瞬时；
    HTML 仍走网络优先，保证新版本立刻生效。
    注意：office-preview 不再预缓存（改成按需加载，省 785KB）。 */
-const VERSION = '20261109g';
+const VERSION = '20261109h';
 const CACHE = 'xy6300-notes-' + VERSION;
 const ASSETS = [
   './',

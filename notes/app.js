@@ -119,6 +119,7 @@
     vaultReady: false,
     syncManual: false,
     pendingCloudCount: 0,
+    folders: [],
     unlockOnly: false,
     editor: null,
     attachmentUrls: new Map(),
@@ -496,6 +497,18 @@
 
     /* ---------- 文件夹 + 笔记合成一棵树（参照 Obsidian） ---------- */
     const root = { name: '', path: '', children: new Map(), notes: [] };
+    const ensurePath = path => {
+      let node = root, acc = '';
+      for (const part of String(path).split('/').filter(Boolean)) {
+        acc = acc ? acc + '/' + part : part;
+        if (!node.children.has(part)) {
+          node.children.set(part, { name: part, path: acc, children: new Map(), notes: [] });
+        }
+        node = node.children.get(part);
+      }
+      return node;
+    };
+    for (const folder of state.folders || []) ensurePath(folder);   // 手动建的空文件夹
     for (const note of notes) {
       const path = Core.normalizeFolder(note.folder);
       if (!path) { root.notes.push(note); continue; }
@@ -546,9 +559,7 @@
       }
     };
     walk(root, 0);
-    if (!root.children.size) {
-      rows.push('<div class="list-hint">还没有文件夹。点开任意一篇笔记，标题下方有「位置」，填 <b>100-工作/教学</b> 这样就会自动分组。</div>');
-    }
+    rows.push('<button class="tree-new-folder" type="button" id="newFolderRow">＋ 新建文件夹</button>');
     refs.noteList.innerHTML = rows.join('');
   }
 
@@ -787,6 +798,7 @@
 
   async function startNotes() {
     state.notes = await DB.loadNotes(state.key, Crypto);
+    state.folders = (await DB.getMeta('folders')) || [];
     if (!state.notes.length) {
       state.notes.push(makeNote({
         title: '欢迎来到私人笔记',
@@ -1037,10 +1049,14 @@
         showToast(`同步完成：云端 ${st.fetched} 条，解开 ${st.applied} 条，${st.failed} 条解不开`);
       }
     } catch (error) {
-      if (error.status === 401 || error.status === 403) {
+      if (error.status === 403) {
+        // 域名没被云端放行（例如用 xy6300.cc 打开、或走的 http）
+        setSyncState('error', '域名未授权');
+        showToast('这个网址不被云端允许同步，请用 https://www.xy6300.cc/notes/ 打开', 6000);
+      } else if (error.status === 401) {
         writeSession(null);
         setSyncState('local', '需登录');
-        showToast('登录已过期，请重新连接云同步');
+        showToast('登录被拒绝：这台设备的笔记口令和云端账号不一致', 6000);
       } else {
         setSyncState(navigator.onLine ? 'error' : 'offline', navigator.onLine ? '同步失败' : '离线编辑');
         showToast(`同步失败：${error.message}`);
@@ -1264,7 +1280,7 @@
     if (officeLoading) return officeLoading;
     officeLoading = new Promise((resolve, reject) => {
       const script = document.createElement('script');
-      script.src = 'office-preview.bundle.js?v=20261109g';
+      script.src = 'office-preview.bundle.js?v=20261109h';
       script.onload = () => resolve();
       script.onerror = () => { officeLoading = null; reject(new Error('预览组件下载失败')); };
       document.head.appendChild(script);
@@ -1623,6 +1639,16 @@
     });
 
     refs.noteList.addEventListener('click', event => {
+      if (event.target.closest('#newFolderRow')) {
+        const raw = prompt('文件夹名称（可以用 / 分层，如 100-工作/教学）', '');
+        if (raw == null) return;
+        const path = Core.normalizeFolder(raw);
+        if (!path) return;
+        if (!state.folders.includes(path)) state.folders.push(path);
+        DB.setMeta('folders', state.folders).catch(() => {});
+        renderList();
+        return;
+      }
       const folder = event.target.closest('.tree-folder');
       if (folder) {
         const path = folder.dataset.tree;
