@@ -532,15 +532,10 @@
       .slice(0, 120) || '空白笔记';
 
     const rows = [];
+    /* 一行一个文件：只显示标题 + 时间（像文件管理器，不要摘要） */
     const noteRow = (note, depth) => `<button class="note-row${note.id === state.activeId ? ' active' : ''}" type="button" data-id="${note.id}" style="padding-left:${14 + depth * 14}px">
-        <span class="note-main">
-          <span class="note-row-top">
-            <span class="note-title">${Core.escapeHtml(note.title)}</span>
-            <span class="note-time">${Core.formatRelativeTime(note.updatedAt, now())}</span>
-          </span>
-          <span class="note-snippet">${Core.escapeHtml(snippetOf(note))}</span>
-          ${note.tags.length ? `<span class="note-tags">${note.tags.slice(0, 4).map(tag => `<span>#${Core.escapeHtml(tag)}</span>`).join('')}</span>` : ''}
-        </span>
+        <span class="note-title">${Core.escapeHtml(note.title || '未命名笔记')}</span>
+        <span class="note-time">${Core.formatRelativeTime(note.updatedAt, now())}</span>
       </button>`;
 
     const walk = (node, depth) => {
@@ -1291,7 +1286,7 @@
     if (officeLoading) return officeLoading;
     officeLoading = new Promise((resolve, reject) => {
       const script = document.createElement('script');
-      script.src = 'office-preview.bundle.js?v=20261109j';
+      script.src = 'office-preview.bundle.js?v=20261109k';
       script.onload = () => resolve();
       script.onerror = () => { officeLoading = null; reject(new Error('预览组件下载失败')); };
       document.head.appendChild(script);

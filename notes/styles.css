@@ -1483,3 +1483,36 @@ kbd {
   cursor: pointer;
 }
 .tools-danger:hover{ background: rgba(180,55,44,.07) }
+
+/* ============ 文件行：单行、紧凑 ============ */
+.list-pane .note-row{
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 0;
+  padding: 6px 12px 6px 10px;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+.list-pane .note-row + .note-row{ border-top: 1px solid var(--line); }
+.list-pane .note-row .note-title{
+  flex: 1; min-width: 0;
+  font-size: 13px; font-weight: 500; line-height: 1.5;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.list-pane .note-row .note-time{
+  flex: none;
+  font-size: 10px; color: var(--faint);
+}
+.list-pane .note-snippet,
+.list-pane .note-tags{ display: none }
+
+/* 窄屏（620~900）也要能看正文：列表和编辑区二者只显示一个 */
+@media (max-width: 900px){
+  .editor-pane{ display: none }
+  body.note-open .editor-pane{ display: block }
+  body.note-open .list-pane{ display: none }
+}
