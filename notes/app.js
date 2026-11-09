@@ -583,7 +583,6 @@
       month: '2-digit',
       day: '2-digit'
     }).format(new Date(note.updatedAt)).replace(/\//g, '.');
-    refs.titleInput.value = note.title;
     if (state.editor && state.editor.getValue() !== note.body) state.editor.setValue(note.body);
     refs.wordCount.textContent = `${note.body.replace(/\s/g, '').length.toLocaleString('zh-CN')} 字`;
     if (refs.noteTime) refs.noteTime.textContent = new Date(note.updatedAt).toLocaleString('zh-CN', {
@@ -658,17 +657,18 @@
     return note;
   }
 
-  function updateFromInputs() {
-    const note = activeNote();
-    if (!note) return;
-    note.title = refs.titleInput.value.trim() || '未命名笔记';
-    noteChanged(note);
+
+  function titleFromBody(body) {
+    const line = String(body || '').split('\n').find(l => l.trim()) || '';
+    return line.replace(/^#{1,6}\s*/, '').replace(/[*_`>\[\]]/g, '').trim().slice(0, 80);
   }
 
   function updateBody(value) {
     const note = activeNote();
     if (!note) return;
     note.body = String(value || '');
+    const derived = titleFromBody(note.body);
+    if (derived) note.title = derived;      // 标题就是正文第一行，不再单独维护
     noteChanged(note);
   }
 
@@ -1211,6 +1211,17 @@
     }
   }
 
+
+  async function createFolder() {
+    const raw = prompt('文件夹名称（可以用 / 分层，如 100-工作/教学）', '');
+    if (raw == null) return;
+    const path = Core.normalizeFolder(raw);
+    if (!path) return;
+    if (!state.folders.includes(path)) state.folders.push(path);
+    await DB.setMeta('folders', state.folders).catch(() => {});
+    renderList();
+  }
+
   async function addAttachments(fileList) {
     const note = activeNote();
     if (!note) {
@@ -1280,7 +1291,7 @@
     if (officeLoading) return officeLoading;
     officeLoading = new Promise((resolve, reject) => {
       const script = document.createElement('script');
-      script.src = 'office-preview.bundle.js?v=20261109h';
+      script.src = 'office-preview.bundle.js?v=20261109i';
       script.onload = () => resolve();
       script.onerror = () => { officeLoading = null; reject(new Error('预览组件下载失败')); };
       document.head.appendChild(script);
@@ -1578,6 +1589,16 @@
   function bindEvents() {
     const create = () => createNote();
     refs.sideNewBtn.addEventListener('click', create);
+    const newFolderBtn = document.getElementById('newFolderBtn');
+    if (newFolderBtn) newFolderBtn.addEventListener('click', createFolder);
+    const deleteCurrentBtn = document.getElementById('deleteCurrentBtn');
+    if (deleteCurrentBtn) deleteCurrentBtn.addEventListener('click', () => {
+      if (!confirm('删除当前这篇笔记？')) return;
+      refs.settingsDialog.close();
+      const dialog = document.getElementById('toolsDialog');
+      if (dialog) dialog.close();
+      deleteActive();
+    });
 
     /* ---------- 底部工具栏（手机）+ 齿轮：只有一个入口，逻辑一致 ---------- */
     const toolsDialog = document.getElementById('toolsDialog');
@@ -1614,7 +1635,7 @@
     markBottomBar();
 
     refs.settingsBtn.addEventListener('click', openSettings);
-    refs.deleteBtn.addEventListener('click', deleteActive);
+    if (refs.deleteBtn) refs.deleteBtn.addEventListener('click', deleteActive);
 
     refs.menuBtn.addEventListener('click', toggleSidebar);
     refs.closeMenuBtn.addEventListener('click', () => {
@@ -1633,22 +1654,13 @@
     });
     refs.listToggleBtn.addEventListener('click', () => setListCollapsed(!state.listCollapsed));
     refs.listCollapseBtn.addEventListener('click', () => setListCollapsed(true));
-    refs.backToListBtn.addEventListener('click', () => {
+    if (refs.backToListBtn) refs.backToListBtn.addEventListener('click', () => {
       saveNow();
       document.body.classList.remove('note-open');
     });
 
     refs.noteList.addEventListener('click', event => {
-      if (event.target.closest('#newFolderRow')) {
-        const raw = prompt('文件夹名称（可以用 / 分层，如 100-工作/教学）', '');
-        if (raw == null) return;
-        const path = Core.normalizeFolder(raw);
-        if (!path) return;
-        if (!state.folders.includes(path)) state.folders.push(path);
-        DB.setMeta('folders', state.folders).catch(() => {});
-        renderList();
-        return;
-      }
+      if (event.target.closest('#newFolderRow')) { createFolder(); return; }
       const folder = event.target.closest('.tree-folder');
       if (folder) {
         const path = folder.dataset.tree;
@@ -1688,7 +1700,6 @@
       state.query = refs.searchInput.value;
       renderList();
     });
-    refs.titleInput.addEventListener('input', updateFromInputs);
     if (refs.folderInput) {
       refs.folderInput.addEventListener('change', () => {
         const note = activeNote();

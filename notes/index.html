@@ -13,7 +13,7 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon-192.jpg" type="image/jpeg">
   <link rel="apple-touch-icon" href="icon-192.jpg">
-  <link rel="stylesheet" href="styles.css?v=20261109h">
+  <link rel="stylesheet" href="styles.css?v=20261109i">
 </head>
 <body>
   <a class="skip-link" href="#editorPane">跳到编辑区</a>
@@ -94,6 +94,7 @@
           <span id="listTitle">全部笔记</span>
           <span class="list-head-right">
             <span id="listCount">0</span>
+            <button class="list-new-folder" id="newFolderBtn" type="button" title="新建文件夹">＋ 文件夹</button>
             <button class="list-collapse-btn" id="listCollapseBtn" type="button" aria-label="收起笔记列表">
               收起
             </button>
@@ -111,15 +112,6 @@
 
         <section class="editor-shell" id="editorShell" hidden>
           <div class="editor-head">
-            <div class="title-row">
-              <button class="icon-btn mobile-back" id="backToListBtn" type="button" aria-label="返回笔记列表">
-                <svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg>
-              </button>
-              <input id="titleInput" class="title-input" type="text" placeholder="未命名笔记" autocomplete="off">
-              <button class="icon-btn danger" id="deleteBtn" type="button" aria-label="删除笔记" title="删除笔记">
-                <svg viewBox="0 0 24 24"><path d="M5 7h14M9 7V4h6v3M7 7l1 13h8l1-13M10 11v5M14 11v5"/></svg>
-              </button>
-            </div>
             <div class="folder-path">
               <span>位置</span>
               <input id="folderInput" type="text" placeholder="文件夹，如 100-工作/教学" autocomplete="off" spellcheck="false">
@@ -242,18 +234,19 @@
       <span class="eyebrow">笔记工具</span>
       <h2>设置与工具</h2>
       <div class="tools-body" id="toolsBody"></div>
+      <button class="tools-danger" id="deleteCurrentBtn" type="button">删除当前这篇笔记</button>
     </div>
   </dialog>
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
-  <script src="core.js?v=20261109h"></script>
-  <script src="crypto.js?v=20261109h"></script>
-  <script src="db.js?v=20261109h"></script>
-  <script src="sync.js?v=20261109h"></script>
-  <script src="config.js?v=20261109h"></script>
-  <script src="live-editor.bundle.js?v=20261109h"></script>
-  <script src="oss.js?v=20261109h"></script>
-  <script src="app.js?v=20261109h"></script>
+  <script src="core.js?v=20261109i"></script>
+  <script src="crypto.js?v=20261109i"></script>
+  <script src="db.js?v=20261109i"></script>
+  <script src="sync.js?v=20261109i"></script>
+  <script src="config.js?v=20261109i"></script>
+  <script src="live-editor.bundle.js?v=20261109i"></script>
+  <script src="oss.js?v=20261109i"></script>
+  <script src="app.js?v=20261109i"></script>
 </body>
 </html>

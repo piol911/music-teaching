@@ -1446,3 +1446,40 @@ kbd {
   cursor: pointer;
 }
 .tree-new-folder:hover{ background: var(--paper-deep); color: var(--text) }
+
+/* ---------- 列表改紧凑：一屏能看十几行 ---------- */
+.list-pane .note-row{
+  padding-top: 7px; padding-bottom: 7px;
+  min-height: 0;
+  gap: 0;
+}
+.list-pane .note-title{ font-size: 13px; line-height: 1.35 }
+.list-pane .note-snippet{ font-size: 11.5px; line-height: 1.35; margin-top: 2px }
+.list-pane .note-tags{ margin-top: 3px }
+.list-pane .note-tags span{ font-size: 10.5px }
+.list-pane .note-time{ font-size: 10.5px }
+.list-pane .tree-folder{ padding-top: 6px; padding-bottom: 6px; font-size: 12.5px }
+
+/* 列表头的「＋ 文件夹」 */
+.list-new-folder{
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--text-2);
+  font: inherit; font-size: 11.5px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.list-new-folder:hover{ background: var(--paper-deep); color: var(--text) }
+
+/* 工具面板里的危险操作 */
+.tools-danger{
+  display: block; width: 100%;
+  margin-top: 6px;
+  padding: 12px 10px;
+  border: 0; border-radius: 10px;
+  background: transparent; color: #b4372c;
+  font: inherit; font-size: 14px; text-align: left;
+  cursor: pointer;
+}
+.tools-danger:hover{ background: rgba(180,55,44,.07) }
